@@ -9,8 +9,8 @@
 | **Status** | Not started |
 
 ## Scope
-- Synthetic LLM tool-conversation data (5–10k examples) from an open-weight generator. Every example is validated against the mock tools, then deduplicated against the frozen set.
-- ASR data: training manifests from IndicVoices Hindi, Kathbath train and MUCS train, plus a held-out test corpus not used in training, with speaker overlap checked.
+- Synthetic LLM data pipeline: generation prompts, validation against the mock tools, and dedup against the frozen set. It is built and tested on the Mac with a small sample. The full 5–10k run uses a larger open-weight generator in the first hour of GPU sprint 1, since a 16 GB Mac is too small for that generator.
+- ASR data: training manifests from IndicVoices Hindi, Kathbath train and MUCS train. They **exclude the phase 7 frozen sets**, and speaker and utterance overlap against those sets is checked.
 - DVC for datasets, MLflow for runs.
 - LoRA training scripts run for a few steps on the Mac (MLX, or tiny CPU runs).
 - E3: a from-scratch int8/int4 quantiser with error analysis.

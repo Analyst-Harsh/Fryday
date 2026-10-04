@@ -1,4 +1,4 @@
-# Phase 6 — Money path
+# Phase 5 — Money path
 
 | | |
 |---|---|
@@ -22,7 +22,10 @@
 - Approval state machine with compare-and-set and expiry by the DB clock; payload hash; read-back built from the stored row.
 - Reconciler, run at startup and every 60 s.
 - Audit log behind an INSERT-only DB role.
-- Confirm card showing the amount, items and address as text; confirm phrase and tap bound to `approval_id` + `payload_hash`.
+- Confirm card showing the amount, items and address as text. A **typed** confirm phrase plus a tap, both bound to `approval_id` + `payload_hash`. Phase 8 replaces the typed phrase with a spoken one.
+- Approval timings: `pending` expires after 45 s and `approved` after 10 s, by the DB clock; a reconciler moves `executing` rows older than 30 s to `unknown`.
+- LangGraph interrupt with a checkpointer and `thread_id`.
+- MCP spend timeout of 15 s, then `unknown` (HLD §8).
 - Prompt-injection test suite.
 
 ## Out of scope
@@ -32,7 +35,7 @@
 - [ ] Orders per approval ≤ 1 under every fault mode, checked by an automated test.
 - [ ] Expired or mismatched confirmations are rejected.
 - [ ] The audit role cannot UPDATE or DELETE.
-- [ ] Injected text cannot change what is approved.
+- [ ] At least 10 injection fixtures, and the stored `payload_hash` is unchanged in every case.
 
 ## What you learn
 State machines, idempotency, failure semantics (at-most-once, reconciliation), prompt-injection defence.

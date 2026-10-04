@@ -47,10 +47,10 @@ Estimates are working days at 2–4 h a day. Expect real time to be about 1.3–
 | 2 | [Contracts + Mac backends](phase-02-contracts-mac-backends.md) | The app calls models through the two contracts, with tests | Mac | 5–6 | 1 |
 | 3 | [Text agent skeleton](phase-03-text-agent-skeleton.md) | **First end-to-end slice:** typed Hinglish → local LLM → reply, traced | Mac | 6–7 | 2 |
 | 4 | [Memory + non-spend tools](phase-04-memory-tools.md) | Fryday remembers you and acts through safe tools | Mac | 5–6 | 3 |
-| 5 | [LLM eval harness + baselines](phase-05-llm-eval.md) | Measure the LLM before changing it | Mac | 6–8 | 4 |
-| 6 | [Money path](phase-06-money-path.md) | Safe ordering against a mock grocery server with fault injection | Mac | 6–8 | 4 |
-| 7 | [Voice backends + audio](phase-07-voice-backends.md) | Speech in and speech out models working on the Mac, with baselines | Mac | 7–9 | 2, 5 |
-| 8 | [Voice turn manager](phase-08-voice-turn-manager.md) | Talk to Fryday end to end, with barge-in | Mac | 6–8 | 6, 7 |
+| 5 | [Money path](phase-05-money-path.md) | Safe ordering against a mock grocery server with fault injection | Mac | 6–8 | 4 |
+| 6 | [LLM eval harness + baselines](phase-06-llm-eval.md) | Measure the LLM before changing it | Mac | 6–8 | 4, 5 |
+| 7 | [Voice backends + audio](phase-07-voice-backends.md) | Speech in and speech out models working on the Mac, with baselines | Mac | 7–9 | 2, 6 |
+| 8 | [Voice turn manager](phase-08-voice-turn-manager.md) | Talk to Fryday end to end, with barge-in | Mac | 6–8 | 5, 7 |
 | 9 | [Ops hardening](phase-09-ops-hardening.md) | SLOs, alerts, backups, retention, scans | Mac | 4–5 | 8 |
 | 10 | [Training data + dry runs](phase-10-training-data.md) | Datasets ready and training scripts proven on the Mac | Mac | 6–8 | 5, 6, 7 |
 | 11 | [GPU ops tooling](phase-11-gpu-ops.md) | Choose a provider; safe, scripted, cheap GPU sessions | Mac + ~2 h GPU | 3–5 | 9 |
@@ -58,7 +58,9 @@ Estimates are working days at 2–4 h a day. Expect real time to be about 1.3–
 | 13 | [GPU sprint 2: serving + optimisation](phase-13-gpu-serving.md) | Everything on GPU Triton; TensorRT, profiling, CUDA principles | GPU | 6–8 | 12 |
 | 14 | [GPU sprint 3: prove it](phase-14-prove-it.md) | Load, cost, chaos, demo and write-ups | GPU + Mac | 4–6 | 13 |
 
-The estimates add up to about 80–107 working days. Phases 5 and 6 can run in either order. The order may change after spike 0; if it does, update this file.
+The money path (5) runs before the LLM eval (6), because the eval's tool conversations include grocery calls, which need the mock's schemas.
+
+The estimates add up to about **75–100 working days**, or roughly 100–150 days with the usual 1.3–1.5× slip. The order may change after spike 0; if it does, update this file.
 
 ```mermaid
 flowchart LR
@@ -66,11 +68,11 @@ flowchart LR
     P1 --> P2[2 Contracts]
     P2 --> P3[3 Text skeleton]
     P3 --> P4[4 Memory + tools]
-    P4 --> P5[5 LLM eval]
-    P4 --> P6[6 Money path]
+    P4 --> P5[5 Money path]
+    P5 --> P6[6 LLM eval]
     P2 --> P7[7 Voice backends]
-    P5 --> P7
-    P6 --> P8[8 Voice turn mgr]
+    P6 --> P7
+    P5 --> P8[8 Voice turn mgr]
     P7 --> P8
     P8 --> P9[9 Ops]
     P5 --> P10[10 Training data]
@@ -98,7 +100,8 @@ Blue phases run on the Mac and green phases use a rented GPU.
 | Phase 1 | Download the ASR datasets and check their licences: IndicVoices Hindi, Kathbath, MUCS 2021 Hi-En (OpenSLR 104). Common Voice now needs a Mozilla Data Collective account. Skip CS-FLEURS, which is non-commercial and mostly synthetic. |
 | Phase 1 | Langfuse Cloud signup. Choose the region now, because it can't be changed later. |
 | Phase 4 | A web search API key, and a Google Cloud project with an OAuth consent screen (Calendar). |
-| Phase 5 | API keys for the hosted baseline models, used offline only. |
+| Phase 6 | API key for the hosted LLM baseline, used offline only. |
+| Phase 7 | API key for the hosted ASR baseline, used offline only. |
 | Phase 7 | Record the own-voice entity test set: 30–60 min of scripted Hinglish commands. |
 | Phase 11 | A GPU provider account, chosen by the criteria in phase 11, plus a budget alert. |
 
@@ -106,7 +109,7 @@ Blue phases run on the Mac and green phases use a rented GPU.
 
 | HLD item | Phase |
 |---|---|
-| M0 spikes: Mac (S0-1, 2, 3, 5, 8, 9) / GPU (S0-6, 7, 11) / mock flag (S0-10) / deferred (S0-4) | 1 / 11 / 6 / — |
+| M0 spikes: Mac (S0-1, 2, 3, 5, 8, 9) / GPU (S0-6, 7, 11) / mock flag (S0-10) / deferred (S0-4) | 1 / 11 / 5 / — |
 | M1 text agent, tools, approvals, memory, eval | 3, 4, 5, 6 |
 | M2 voice on the Mac | 7, 8 |
 | M3 LLM LoRA + quantisation | 10, 12 |
@@ -118,17 +121,17 @@ Blue phases run on the Mac and green phases use a rented GPU.
 | E4, E6–E8 (E5 stretch) | 13 |
 | E9–E11 | 14 |
 | §8 SLOs and alerts | 9 (app), 11 (GPU heartbeat), 14 (GPU p95) |
-| §8 timeouts | 3 |
+| §8 timeouts | 3 (LLM, embed), 4 (MCP non-spend), 5 (MCP spend), 7 (ASR), 8 (TTS) |
 | §8 backups | 9 |
 | §8 runbook | 9, 11 |
 | §8 versioning (WS `v`, Alembic) | 3 |
-| §7 approval state machine, reconciler, audit, injection | 6 |
+| §7 approval state machine, reconciler, audit, injection | 5 |
 | §7 auth, scrubber | 3 |
 | §7 OAuth | 4 |
 | §7 retention, `forget`, audio opt-in | 9 |
 | §7 supply chain: gitleaks | 0 |
 | §7 supply chain: pip-audit, Trivy | 9 |
-| §5 frozen sets, judge, gate matrix, `models.lock`, divergence | 5 (LLM), 7 (ASR) |
+| §5 frozen sets, judge, gate matrix, `models.lock`, divergence | 6 (LLM, gate thresholds), 7 (ASR, synthetic dev set, hosted ASR baseline), 13 (divergence measured) |
 | §2 warm-up, readiness | 2 |
 | §2 barge-in, admission, minute cap | 8 |
 | Learning map: audio | 7 |

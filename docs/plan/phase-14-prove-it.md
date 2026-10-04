@@ -18,13 +18,13 @@
 - Record the demo; write up README and portfolio notes.
 
 ## Out of scope
-- Phase 2 features (vision, wake word, and so on).
+- Post-v1 features listed under the HLD's "Phase 2 (not v1)": vision, wake word, VAD and the rest.
 
 ## Exit criteria
 - [ ] E9–E11 are written up.
 - [ ] The admission limit is set.
-- [ ] GPU p95 is measured against the SLO.
-- [ ] The tunnel-drop chaos test passes.
+- [ ] p95 first audio is ≤ 2.0 s at admission limit N, or the miss is recorded and the HLD SLO updated.
+- [ ] Tunnel-drop chaos: orders per approval stay ≤ 1, and `unknown` resolves within 5 min.
 - [ ] The demo is recorded.
 
 ## What you learn

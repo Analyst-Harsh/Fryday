@@ -11,7 +11,7 @@
 ## Scope
 - `backends` module: a KServe v2 gRPC client (tritonclient) and an OpenAI-compatible client; `MODEL_BACKEND` config.
 - Stub servers for both contracts, for use in CI.
-- Contract tests parametrised by backend URL.
+- Contract tests parametrised by backend URL, including tool-call JSON-schema and chat-template parity checks (HLD §10).
 - Triton CPU model repository with `embed` (bge-m3 exported to ONNX), or the ORT fallback chosen in S0-1.
 - MLX-LM server launch script (runs natively on the host).
 - Readiness checks with a 1–2 s probe timeout, plus a warm-up inference before reporting ready.

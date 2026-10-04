@@ -22,7 +22,8 @@
 - Production code; GPU spikes (phase 11).
 
 ## Exit criteria
-- [ ] Every spike has a pass/fail result and a decision recorded in `EXPERIMENTS.md`.
+- [ ] Every spike has a pass/fail result and a decision recorded in `EXPERIMENTS.md`, against these thresholds: S0-2 peak memory ≤ 13 GB with no swap growth over a 10-minute loop; S0-3 at least 18 of 20 streamed tool calls valid; S0-5 Magpie's Hindi real-time factor recorded and a listening check passed.
+- [ ] Quick checks recorded: Nemotron streaming on a few Hinglish clips, MUCS test speaker overlap, and whether IndicXlit is available.
 - [ ] The HLD is updated wherever a decision changed it (for example ORT instead of Triton on the Mac, script convention, numbers→words approach, TTS choice).
 
 ## What you learn

@@ -9,7 +9,7 @@
 | **Status** | Not started |
 
 ## Scope
-- Prometheus metrics, plus an SLO alert script that raises a desktop notification on an SLO breach or a stuck `unknown` approval.
+- `obs` compose profile: Prometheus scrapes app and Triton metrics, with SLIs for p95 first audio and turn success. An SLO alert script that raises a desktop notification on an SLO breach or a stuck `unknown` approval.
 - Nightly encrypted `pg_dump` (keep 7) and the first restore drill.
 - 30-day retention, a `forget` command, and audio opt-in and delete.
 - `pip-audit` and Trivy in CI; container images pinned by digest.
@@ -21,8 +21,8 @@
 ## Exit criteria
 - [ ] The alert fires on an injected SLO breach.
 - [ ] The restore drill is done and documented.
-- [ ] A test proves `forget` removes all of the user's data.
-- [ ] The scans run in CI.
+- [ ] A test proves `forget` removes all of the user's data, and rows older than 30 days are purged (backdated-row test).
+- [ ] CI fails on a planted vulnerable dependency (pip-audit) and on an image with a critical CVE (Trivy).
 
 ## What you learn
 SRE basics: SLIs and SLOs, alerting, backup and restore, data retention.

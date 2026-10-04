@@ -12,15 +12,16 @@
 - Memories table with pgvector. Retrieve the top-k facts before each turn; extract new facts after each turn; a contradicting fact supersedes the old one and keeps its history.
 - MCP tool client with Pydantic validation, one repair attempt, and tool output wrapped as untrusted data.
 - Tools: notes, reminders, web search, and Google Calendar (OAuth, Fernet-encrypted tokens, `calendar.events.owned`).
-- Non-spend retry: once, with the same idempotency key.
+- Non-spend retry: once, with the same idempotency key. MCP non-spend timeout of 5 s.
+- On schema drift, the tool is disabled with a clear message.
 
 ## Out of scope
-- Spend tools (phase 6); voice.
+- Spend tools (phase 5); voice.
 
 ## Exit criteria
 - [ ] Retrieval and extraction have tests.
 - [ ] Every tool has a contract test with recorded responses.
-- [ ] An invalid tool call is repaired or politely refused.
+- [ ] At least 10 invalid-call fixtures are each repaired or politely refused, with zero crashes.
 - [ ] The live Calendar smoke test passes.
 
 ## What you learn

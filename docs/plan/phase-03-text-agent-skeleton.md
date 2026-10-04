@@ -14,14 +14,17 @@
 - LangGraph agent with a Postgres checkpointer.
 - Thin React + Vite client with text chat.
 - OpenTelemetry spans per stage, exported to Langfuse Cloud through the PII scrubber; the same scrubber covers local logs.
-- Per-stage timeouts (HLD §8), each ending in a polite failure message.
+- Timeouts for the stages that exist by then: LLM first token (2 s) and embed. Each ends in a polite failure message. Later phases add their own.
+- The app binds to localhost only.
 
 ## Out of scope
 - Memory, tools and voice.
 
 ## Exit criteria
 - [ ] A text chat works end to end in the browser.
-- [ ] A trace is visible in Langfuse with PII scrubbed.
+- [ ] A trace is visible in Langfuse.
+- [ ] A scrubber test shows phone, address and name patterns absent from both the exported spans and the local logs.
+- [ ] A migration test runs Alembic up from an empty DB.
 - [ ] Tests cover the timeout path and WebSocket auth (bad token, bad origin, duplicate connection).
 
 ## What you learn

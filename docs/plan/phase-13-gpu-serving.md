@@ -16,7 +16,8 @@
 - E8: Triton's vLLM backend vs standalone vLLM.
 - Nsight Systems: an annotated timeline of one request. Grafana and DCGM run for the session.
 - M5 ASR gate.
-- Stretch, time-boxed: TRT-LLM Whisper encoder (E5).
+- Stretch, time-boxed: TRT-LLM Whisper encoder (E5), and Triton Model Analyzer.
+- Measure the Mac-vs-GPU divergence: tool-call agreement on the 200-item set.
 
 ## Out of scope
 - Load testing (phase 14).
@@ -26,6 +27,7 @@
 - [ ] E4 and E6–E8 are written up.
 - [ ] The Nsight timeline is recorded.
 - [ ] The M5 gate result is recorded.
+- [ ] Mac-vs-GPU divergence is recorded with confidence intervals and checked against `eval/gate.yaml`.
 
 ## What you learn
 TensorRT, Triton in depth, CUDA working principles.
