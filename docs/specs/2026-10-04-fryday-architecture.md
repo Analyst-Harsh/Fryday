@@ -46,7 +46,7 @@ Unfamiliar terms are defined in the glossary in §3, which is worth skimming fir
 
 ## 1. Fryday in one page
 
-**What it is.** A personal voice assistant you talk to in Hinglish. You hold a button, speak, and it answers aloud. It remembers your preferences and acts through real tools: Swiggy/Instamart, Google Calendar, web search, notes and reminders. Anything that spends money needs a spoken confirmation **and** a tap.
+**What it is.** A personal voice assistant you talk to in Hinglish. You tap the mic button, speak, tap again when you are done, and it answers aloud. It remembers your preferences and acts through real tools: Swiggy/Instamart, Google Calendar, web search, notes and reminders. Anything that spends money needs a spoken confirmation **and** a tap.
 
 > **You:** "Kal subah 7 baje ka reminder laga do, aur Instamart se doodh aur bread mangwa do."
 > **Fryday:** "Reminder set ho gaya. Instamart pe doodh aur bread ₹112 ka hai, usual address pe. Order karun?"
@@ -130,7 +130,7 @@ Always-on hosting is also out, because the runtime is on demand.
 | **KV cache** | Stored attention keys and values that make generation fast. It's the main GPU-memory consumer for LLMs. |
 | **Barge-in** | Interrupting the assistant while it speaks. |
 | **Spike** | A small, throwaway experiment that answers one risky question. |
-| **PTT** | Push-to-talk. In v1, releasing the button ends your utterance. |
+| **Tap-to-talk** | In v1, one tap on the mic button starts listening and a second tap ends your utterance. |
 | **Contract** | A fixed API shape the app calls. Whatever backend implements it can be swapped. |
 | **Epoch** | A counter on each turn. Audio from an older epoch is discarded. |
 | **Idempotency key** | A unique key per action, so a repeated request cannot do the action twice. |
@@ -147,8 +147,8 @@ Always-on hosting is also out, because the runtime is on demand.
 
 ```mermaid
 flowchart LR
-    MIC([Mic, push-to-talk]) -->|PCM16 frames, WebSocket<br/>PTT release ends utterance| ASR[ASR<br/>Whisper turbo]
-    MIC -.->|optional, hands-free only| VAD[VAD<br/>Silero]
+    MIC([Mic button<br/>tap start, tap stop]) -->|PCM16 frames, WebSocket<br/>second tap ends utterance| ASR[ASR<br/>Whisper turbo]
+    MIC -.->|later: automatic stop detection| VAD[VAD<br/>Silero]
     VAD -.-> ASR
     ASR --> NORM[Normaliser in<br/>script convention]
     NORM --> EMB[Embed<br/>bge-m3]
@@ -171,7 +171,7 @@ flowchart LR
 
 **What it shows.** One request, left to right.
 - **Colours:** blue runs in the browser. Purple runs in the app service on the CPU, including the pgvector lookup in Postgres. Orange is a model reached through one of the two model contracts, which are fixed API shapes explained in §6. Grey is an outside service.
-- **End of utterance:** in v1, releasing push-to-talk ends the utterance. Silero VAD is the dashed, optional path for hands-free use.
+- **End of utterance:** in v1, you tap the mic to start and tap again to stop. Silero VAD, the dashed path, will later detect the end of speech automatically.
 - **Normaliser:** it runs twice, on the way in to fix the script convention and on the way out to turn numbers into speakable words.
 
 **Where the orange boxes run**
@@ -238,7 +238,7 @@ flowchart TB
 ```mermaid
 flowchart LR
     subgraph CLIENT[Browser]
-        WEB[Web client<br/>React, push-to-talk]
+        WEB[Web client<br/>React, tap-to-talk]
     end
     subgraph APP[App service: FastAPI, one deployable]
         GW[Gateway<br/>WS, auth, admission]
@@ -407,7 +407,7 @@ sequenceDiagram
     participant A as Agent
     participant X as MCP tool
     B->>G: PCM16 frames (turn_id, seq)
-    B->>G: push-to-talk released
+    B->>G: second tap (stop listening)
     G->>T: end of utterance
     T->>M: asr ModelInfer (gRPC)
     M-->>T: transcript
@@ -437,7 +437,7 @@ sequenceDiagram
 
 | Stage | GPU (L4) | Mac |
 |---|---|---|
-| End of utterance | ~0 with PTT / 200 ms with VAD | same |
+| End of utterance | ~0 with second tap / 200 ms with VAD (later) | same |
 | ASR, 3–5 s utterance | 300–500 ms | 1–2 s |
 | Memory lookup | 50 ms | 80 ms |
 | LLM first token | 250 ms | ~600 ms |
@@ -463,7 +463,7 @@ sequenceDiagram
     participant L as LLM server
     participant TR as Triton (tts)
     Note over B,TR: Fryday is speaking turn epoch 7
-    B->>G: push-to-talk pressed
+    B->>G: mic tapped while Fryday speaks
     G->>T: barge-in
     T->>T: epoch := 8
     T->>L: close stream (vLLM aborts, frees KV blocks)
@@ -473,7 +473,7 @@ sequenceDiagram
     Note over B,TR: new turn starts with epoch 8
 ```
 
-**Why.** Every audio chunk carries its turn epoch, so a late chunk from the old reply can never play over the new one. Cancellation reaches the models too, so the GPU stops doing work nobody will hear. Push-to-talk avoids running VAD on the assistant's own echo in v1.
+**Why.** Every audio chunk carries its turn epoch, so a late chunk from the old reply can never play over the new one. Cancellation reaches the models too, so the GPU stops doing work nobody will hear. Tap-to-talk avoids running VAD on the assistant's own echo in v1. The same tap that interrupts also starts listening for your next sentence.
 
 ### 9.3 Real-money approval
 

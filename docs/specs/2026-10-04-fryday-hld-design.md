@@ -2,7 +2,7 @@
 
 ## Context
 Draft source: `/Users/harshitgoyal/Dev/AI Projects/Fryday/docs/voice_assistant`.
-Fryday is a Hinglish push-to-talk voice assistant whose real purpose is **learning depth for AI engineering roles**: fine-tuning, audio basics, ONNX, CUDA working principles, TensorRT, Triton — inside a production-grade system. This session finalises the HLD and name; the implementation plan is the next session.
+Fryday is a Hinglish tap-to-talk voice assistant whose real purpose is **learning depth for AI engineering roles**: fine-tuning, audio basics, ONNX, CUDA working principles, TensorRT, Triton — inside a production-grade system. This session finalises the HLD and name; the implementation plan is the next session.
 
 v2 incorporates three independent reviews (AI architect, production engineer, web fact-check). Main corrections: honest ASR latency, per-backend eval gate, GPU network/security, approval state machine, 16 GB Mac memory budget, realistic CI, verified component facts, sequenced scope.
 
@@ -24,7 +24,7 @@ v2 incorporates three independent reviews (AI architect, production engineer, we
 | Router to outside model | Phase 2. Hosted models used offline only, as experiment baselines |
 
 ## 1. Components
-1. **Web client** (thin React): push-to-talk, WebSocket audio (browser echo cancellation on), ordered playback with jitter buffer, transcript, approval card with Confirm button.
+1. **Web client** (thin React): tap-to-talk mic button (tap to start, tap to stop), WebSocket audio (browser echo cancellation on), ordered playback with jitter buffer, transcript, approval card with Confirm button.
 2. **App service** (FastAPI, one deployable): gateway (WS, auth, admission control); turn manager (Silero VAD on CPU, barge-in); agent (LangGraph, approval interrupt); memory; text normaliser (script convention, numbers→words); MCP tool client; PII scrubber for outbound traces.
 3. **Model layer**: Contract 1 KServe v2 gRPC → `asr`, `tts`, `embed`. Contract 2 OpenAI-compatible → LLM.
 4. **Data**: Postgres + pgvector — users, memories, sessions, approvals, append-only audit log, history. Local filesystem volume for opt-in audio and model artefacts (object storage later). *Redis and MinIO cut for v1.*
@@ -34,19 +34,19 @@ v2 incorporates three independent reviews (AI architect, production engineer, we
 
 ## 2. Data flow (one turn)
 1. Browser sends PCM16 16 kHz binary frames, each with `turn_id` + `seq`.
-2. Push-to-talk release (or Silero VAD) ends the utterance.
+2. Second tap on the mic button ends the utterance (v1). Automatic end-of-speech detection (Silero VAD) is a later enhancement.
 3. Utterance → `asr` → normaliser. Empty/low-confidence/no-speech output is dropped (Whisper hallucinates on silence).
 4. Transcript → `embed` → pgvector top-k memories.
 5. LangGraph → LLM (streaming). Tool call: Pydantic-validate → filler line → MCP. Invalid call: one repair attempt using the validation error, then polite refusal.
 6. Reply tokens → chunks (short first chunk ~6 words, then sentences) → normalise → `tts` → audio emitted **in order** with `turn_id`/`chunk_seq`, bounded queue (backpressure pauses TTS).
 7. Background: memory extraction, audit/history rows, audio saved only with consent.
 
-**Barge-in**: pressing talk during playback bumps the turn epoch → client drops stale chunks; LLM stream closed (vLLM aborts and frees KV blocks); in-flight Triton gRPC calls cancelled; turn marked interrupted. Push-to-talk avoids server-side VAD on echoing audio in v1.
+**Barge-in**: tapping the mic during playback stops the reply and starts listening; it bumps the turn epoch → client drops stale chunks; LLM stream closed (vLLM aborts and frees KV blocks); in-flight Triton gRPC calls cancelled; turn marked interrupted. Tap-to-talk avoids server-side VAD on echoing audio in v1.
 
 **Latency budget** — hypotheses to measure, not promises:
 | Stage | GPU (L4) | Mac |
 |---|---|---|
-| End of utterance | ~0 (PTT) / 200 ms (VAD) | same |
+| End of utterance | ~0 (second tap) / 200 ms (VAD, later) | same |
 | ASR (scales with length, RTF-based; 3–5 s utterance) | 300–500 ms | 1–2 s (spike) |
 | Memory | 50 ms | 80 ms |
 | LLM first token | 250 ms | ~600 ms |
