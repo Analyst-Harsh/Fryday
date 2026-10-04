@@ -1,0 +1,243 @@
+# Hinglish voice assistant: what we are building
+
+Oct 4, 2026 · @Harshit
+
+## Summary
+
+A personal voice assistant in the spirit of Jarvis. You speak to it in Hinglish, it answers aloud in about a second, it remembers your preferences, and it takes actions through tools. Every model in the main path is open-weight, fine-tuned or tuned by you, and served from one GPU server you run.
+
+The point of the project is the measured engineering behind it: fine-tuning, quantisation and model serving, each with numbers, inside a product a recruiter can talk to.
+
+## What the user experiences
+
+> **You:** "Kal subah 7 baje ka alarm laga do, aur ghar ke liye doodh aur bread order kar do."
+>
+> **Assistant:** "Alarm set ho gaya. Instamart pe doodh aur bread ₹112 ka hai, usual address pe. Order kar doon?"
+>
+> **You:** "Haan."
+
+- **Natural speech.** Hindi, English and the mix of both, in one sentence.
+- **Fast replies.** It starts speaking before the full answer is written.
+- **Interruptible.** If you talk over it, it stops and listens.
+- **Remembers you.** Address, diet, usual brands, routines, and new facts it picks up in conversation.
+- **Acts for you.** Orders, reminders, calendar entries, web lookups, notes.
+- **Asks before it spends.** Anything that costs money or sends a message is read back and needs a spoken yes.
+
+## Scope
+
+| Version 1 | Phase 2, the Jarvis layer | Left out on purpose |
+| --- | --- | --- |
+| Push to talk in a web app | Wake word on the phone | Operating your computer screen |
+| Fine-tuned speech recognition | Recognising who is speaking | Always-on GPU |
+| Fine-tuned small language model | Speaking first: reminders and alerts | Kubernetes |
+| Streaming speech synthesis | Vision through the camera | Training a model from scratch |
+| Memory of preferences | Smart-home tools |  |
+| Five to ten tools through MCP | Phone app |  |
+| Routing hard questions to a larger model |  |  |
+
+## Architecture
+
+The system has five layers. Clients stream audio to a gateway. An orchestration service runs each conversation turn. That service calls the model server for anything involving a model, calls outside tools for actions, and reads and writes the data stores. Observability and the release pipeline sit across all of it.
+
+&#91;embedded content: system architecture · five layers, model server highlighted\]
+
+The highlighted box is where the fine-tuning, quantisation and serving work lives. The orchestration service is the only part that talks to the model server, the outside tools and the data stores.
+
+### Clients
+
+- **Web app (Next.js).** Captures the microphone, streams audio over a WebSocket, plays the reply as it arrives, and shows the transcript and any pending approval.
+- **Phone app, phase 2.** Same backend, plus a small wake-word model that runs on the phone so nothing is streamed until you say its name.
+
+### Realtime gateway
+
+A FastAPI service holding one WebSocket per conversation. It handles sign-in, rate limits and session state, and passes audio frames in both directions. It holds no model logic.
+
+In version 1 the gateway and the orchestration service ship as one deployable with separate modules. They split into two services only when load requires it.
+
+### Orchestration service
+
+- **Turn manager.** Decides when you have finished speaking, and cancels the reply in progress if you interrupt.
+- **Agent loop (LangGraph).** Takes the transcript and the retrieved memories, lets the language model answer or call tools, and pauses at an approval step for risky actions. This reuses the pattern from TriageBot.
+- **Memory service.** Before each reply it retrieves relevant facts about the user. After each turn it extracts new facts worth keeping.
+- **Model router.** Sends everyday requests to the small self-hosted model and hard questions to a larger model, by an explicit policy that is measured and logged.
+
+* **Text normaliser.** Keeps one script convention across the pipeline: Hindi words in Devanagari and English words in Latin script between models, with numbers, currency and dates expanded into speakable words before synthesis.
+
+Voice detection runs on the CPU inside the turn manager, not on the model server, so that no network call sits between each audio frame and the decision that you have stopped speaking.
+
+### Model server
+
+One Triton instance on one GPU, holding four models in a single model repository:
+
+| Model | Job | Backend | Your work on it |
+| --- | --- | --- | --- |
+| Speech recognition | Audio to text | CTranslate2 in a Python backend first; TensorRT as an experiment | LoRA fine-tune of a Whisper-family model, then quantise |
+| Language model | Decides, answers, calls tools | vLLM, with a memory cap | LoRA fine-tune for tool calling and Hinglish replies, merge, then quantise to 4-bit |
+| Speech synthesis | Text to audio, streamed | Python or ONNX | Pick a Hindi-capable open model, fix one voice, quantise |
+| Embeddings | Memory search | ONNX, then TensorRT | Reuse BGE from DocMind |
+
+Triton is the right tool here because several model types share one GPU. Its vLLM backend adds some overhead compared with running vLLM alone, so one experiment compares the two.
+
+### External calls
+
+- **MCP tools.** Swiggy first, then calendar, reminders, web search and notes. Each tool call is validated before it runs.
+- **Larger model.** Reached only through the router.
+
+* **Hosted fallback.** If the GPU server is cold or down, speech and language requests fall back to hosted APIs so the assistant still answers. The same path provides the baseline numbers for the experiments. Personal details are stripped from anything sent outside unless the user has agreed.
+
+### Data stores
+
+- **Postgres with pgvector.** Users, memories and their embeddings, approval records, conversation history.
+- **Redis.** Live session state and short-lived caches.
+- **Object storage.** Audio kept for evaluation with consent, and model files.
+
+### Across everything
+
+- **Observability.** OpenTelemetry spans on every stage of every turn, exported to Langfuse, with Prometheus and Grafana for GPU and latency metrics.
+- **Release pipeline.** A new fine-tune is registered, scored on a frozen evaluation set, and promoted only if it beats the current model by a set margin. Infrastructure is defined in Terraform on AWS.
+
+## One turn, step by step
+
+These figures are design targets to test against, not measurements.
+
+| Step | What happens | Target |
+| --- | --- | --- |
+| 1 | You stop speaking and the turn manager detects the end | 200 ms |
+| 2 | Final transcript is ready (partial text has been streaming) | 150 ms |
+| 3 | Memory lookup | 50 ms |
+| 4 | Language model produces its first words | 250 ms |
+| 5 | Speech synthesis produces its first audio | 200 ms |
+|  | **Time until you hear a reply** | **about 850 ms** |
+
+A tool call adds the tool's own response time. For those turns the assistant says a short filler line ("ek second, dekhta hoon") while it waits.
+
+## The models and the fine-tuning
+
+**Speech recognition.**
+
+- Candidates: Whisper large-v3-turbo and an open Hinglish Whisper fine-tune such as Oriserve's.
+- Problem to fix: names of products, brands, places and people in mixed speech.
+- Data: synthetic utterances made with an open speech-synthesis model, plus recordings of your own voice and a few volunteers.
+- Measures: word error rate and how often named items are transcribed correctly.
+
+**Language model.**
+
+- Candidates: small open models in the 2 to 8 billion parameter range, chosen after a baseline test.
+- Problem to fix: reliable tool calls with valid arguments, and replies in natural Hinglish at spoken length.
+- Data: tool-calling conversations generated by a larger model, then filtered and checked by hand.
+- Measures: tool-choice accuracy, argument validity, reply quality scored by a calibrated judge.
+
+**Speech synthesis.**
+
+- Candidates: open models with Hindi support, such as NVIDIA Magpie TTS or AI4Bharat Indic Parler-TTS.
+- Work: choose on naturalness and speed for mixed-language text; fine-tuning is optional here.
+
+## Serving and quantisation experiments
+
+1. Speech recognition at full precision, half precision and 8-bit on CTranslate2, then against a TensorRT build.
+2. Language model at full precision against AWQ and GPTQ 4-bit.
+3. Speech synthesis at full precision against a quantised version.
+4. One Triton server against three separate servers: latency, throughput, GPU memory.
+5. Triton's vLLM backend against standalone vLLM.
+6. Load test: how many conversations at once before the latency target breaks.
+7. Cost per conversation minute for each configuration.
+
+### TensorRT, in two steps
+
+TensorRT is learned on an easy model first, so the hard case is attempted with the tools already understood.
+
+1. **Embedding model.** Export to ONNX, check the outputs match PyTorch, build a TensorRT engine at full and half precision, and serve it on Triton. This gives a three-way comparison of PyTorch, ONNX and TensorRT on one model: latency, throughput and output difference.
+2. **Speech model encoder.** Compile the encoder of the fine-tuned speech model to TensorRT and compare it with the CTranslate2 baseline. If it does not beat the baseline, that result is recorded and the baseline stays in production.
+
+Every result goes in EXPERIMENTS.md, including the ones that show no gain.
+
+## Memory
+
+- **What is stored:** short facts with a type (preference, routine, address, person), a source turn and a timestamp.
+- **How it is used:** the top few relevant facts are added to the model's context for each turn.
+- **How it learns:** a background step proposes new facts after each conversation; contradictions replace the old fact and keep its history.
+- **Control:** the user can list, edit and delete what it remembers.
+
+## Safety
+
+- **Approval step** for anything that spends money, sends a message or deletes data.
+- **Validated tool calls:** arguments are checked against a schema before a tool runs.
+- **Untrusted text:** tool results and web pages are treated as data, never as instructions, with an injection test suite as in TriageBot.
+- **Speaker check, phase 2:** purchases need the registered voice.
+
+## Design review
+
+The first draft was reviewed twice, once from an AI architect's point of view and once from a senior backend engineer's. Both reviews were done by the same author, so they are a structured self-check and not an outside opinion. Verdict: the shape was right, but it was not production grade. The changes below are now part of the design.
+
+### AI architect's findings
+
+| Finding | Why it matters | Change |
+| --- | --- | --- |
+| Hindi speech models write Devanagari, Hinglish ones write Latin script, and Hindi speech synthesis expects Devanagari | Without one convention the voice mispronounces or skips words | Added a text normaliser and a fixed script convention |
+| Whisper does not stream natively, and compiling it to TensorRT is hard | The 150 ms transcript target is at risk | CTranslate2 is the baseline; TensorRT becomes an experiment; a streaming-native model is tested as an alternative |
+| Voice detection on the model server adds a network call per audio frame | Slower end-of-speech detection | Moved to the CPU inside the turn manager |
+| Silence alone is a poor signal that someone has finished | The assistant cuts people off mid-thought | Experiment: a small end-of-turn model on top of silence detection |
+| vLLM reserves most of the GPU memory by default | The other models fail to load | Memory cap set per model; total budget measured before model choice |
+| Tool-call validity can come from constrained decoding without any fine-tuning | Fine-tuning might not be the reason calls are valid | Experiment: constrained decoding alone against fine-tune plus constrained decoding |
+| The evaluation gate scored the full-precision model | What ships is the quantised one | The gate scores the exact quantised artefact that will be served |
+| Synthetic training speech can teach the model the synthesiser's quirks | Good scores that do not transfer to real voices | Test set is real speech only, from speakers absent from training |
+| The router sends user text to an outside model | Privacy leak | Redaction before any outside call, and a per-user setting to disable routing |
+
+### Senior engineer's findings
+
+| Finding | Why it matters | Change |
+| --- | --- | --- |
+| The assistant can hear its own voice through the microphone | It interrupts itself | Browser echo cancellation on in version 1; WebRTC transport for the phone app |
+| An interruption must stop work already in progress | Wasted GPU time and overlapping speech | Cancellation is passed through to the language and speech models |
+| One GPU is a single point of failure, and loading models takes minutes | A dead demo, or a long wait after a cold start | Hosted fallback path, readiness checks, and a visible warming-up state |
+| No limit on simultaneous conversations | Latency collapses for everyone | Admission control: a fixed number of live conversations per GPU, then a queue |
+| A retried request could place an order twice | Real money lost | Idempotency keys on every action; approvals expire; an audit log of actions |
+| Tool sign-in tokens stored per user | A leak exposes accounts | Encrypted at rest with a managed key; refresh handled server side |
+| Voice is personal data | Legal and trust exposure | Audio is not stored by default; storage for evaluation is opt-in; delete on request |
+| A public demo can run up GPU and API bills | Unbounded cost | Per-user daily minute caps and a spend ceiling on outside calls |
+| Gateway and orchestration as two services | More to deploy and debug for one person | One deployable in version 1 |
+| The plan said Fargate | As far as I know Fargate cannot attach GPUs | CPU services on Fargate; the model server on a GPU instance or a GPU cloud |
+| No test strategy for audio | Regressions go unnoticed | Recorded audio fixtures replayed in integration tests; contract tests for tool schemas |
+
+## Where the fine-tuning data comes from
+
+### Speech recognition
+
+| Source | What it gives | Use |
+| --- | --- | --- |
+| Public Hindi and Indian-English speech with transcripts: IndicVoices, Kathbath, Shrutilipi, Vaani, Common Voice, FLEURS | Many speakers and accents | Keeps general accuracy from dropping during fine-tuning |
+| Public Hindi-English code-switched sets: MUCS, CS-FLEURS | Mixed-language speech | Training and a public benchmark |
+| Synthetic speech you generate | Sentences dense with product, brand, place and contact names, in many voices, with noise added | The main training set for the names problem |
+| Recordings from you and 10 to 20 volunteers | Real voices saying realistic commands | The frozen test set, and nothing else |
+| Opted-in user audio with corrected transcripts | Real usage | Later fine-tuning rounds |
+
+The synthetic route is supported by published work: one 2026 paper built about 22,000 code-mixed utterances for under $50 and used them for a LoRA fine-tune. That was in Telugu, so the Hindi result is yours to measure. Your channel's audience is a practical source of volunteers.
+
+### Language model
+
+| Source | What it gives | Use |
+| --- | --- | --- |
+| Public function-calling sets, such as Glaive function-calling and Salesforce xLAM | The general shape of tool calls, in English | A small share of training, to keep general skill |
+| Synthetic conversations for your own tools | Hinglish requests paired with correct calls, including follow-up questions, refusals and approvals | The main training set, about 5,000 to 10,000 examples |
+| Examples you write by hand | The tone and length you want | Seeds for generation, plus a 200-example reviewed test set |
+| Opted-in conversation logs with corrections | Real failures | Later rounds |
+
+Every synthetic example is checked by running its tool call against mock tools; examples that fail are thrown away. Use an open-weight model as the generator where possible, because some hosted providers restrict training on their outputs.
+
+### Speech synthesis
+
+No training data is needed unless you want a custom voice. That would take one to three hours of clean recordings from one consenting speaker.
+
+### Rules for all of it
+
+- Check each dataset's licence before use; several are gated or non-commercial.
+- Version every dataset with DVC, as in SignalScore.
+- The test sets are frozen and never used for training or tuning.
+
+## Not yet verified
+
+- **GPU size and cost.** Whether five models fit on one mid-range GPU, and what on-demand hosting costs per month.
+- **Model choices.** All candidates above are to be tested; none is confirmed.
+- **Licences.** Magpie TTS is under NVIDIA's own open model licence, and some AI4Bharat models are gated. Both need reading before use.
+- **Swiggy ordering limits.** At launch, ordering through its MCP server was limited to cash on delivery and Instamart was only partly working. The current state needs checking.
+- **Latency targets.** The table above is a budget, not a result.
