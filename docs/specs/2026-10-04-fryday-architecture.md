@@ -6,7 +6,7 @@
 | **Date** | 2026-10-04 |
 | **Owner** | Harshit Goyal |
 | **Source of truth** | [Fryday HLD](2026-10-04-fryday-hld-design.md) |
-| **Last synced with HLD** | HLD v3 (2026-10-04) |
+| **Last synced with HLD** | HLD v4 (2026-10-04) |
 
 ## How to read this document
 
@@ -46,7 +46,7 @@ Unfamiliar terms are defined in the glossary in §3, which is worth skimming fir
 
 ## 1. Fryday in one page
 
-**What it is.** A personal voice assistant you talk to in Hinglish. You tap the mic button, speak, tap again when you are done, and it answers aloud. It remembers your preferences and acts through real tools: Swiggy/Instamart, Google Calendar, web search, notes and reminders. Anything that spends money needs a spoken confirmation **and** a tap.
+**What it is.** A personal voice assistant you talk to in Hinglish. You tap the mic button, speak, tap again when you are done, and it answers aloud. It remembers your preferences and acts through tools: Google Calendar, web search, notes and reminders, plus grocery ordering against a **mock** Swiggy-style server in v1. Anything that spends money needs a spoken confirmation **and** a tap.
 
 > **You:** "Kal subah 7 baje ka reminder laga do, aur Instamart se doodh aur bread mangwa do."
 > **Fryday:** "Reminder set ho gaya. Instamart pe doodh aur bread ₹112 ka hai, usual address pe. Order karun?"
@@ -94,14 +94,14 @@ Always-on hosting is also out, because the runtime is on demand.
 | 1 | **Learning depth** | Each must-learn topic has a hands-on, measured deliverable (§12, §16). |
 | 2 | **Responsiveness** | Time to first audio is about 1.4–1.8 s on the GPU (hypothesis; SLO p95 ≤ 2.0 s). Interrupting stops the reply immediately. |
 | 3 | **Cost cap** | The GPU is off by default. Each sprint is scripted and the box tears itself down. There is a per-user daily minute cap. |
-| 4 | **Privacy** | Audio is not stored by default. Traces are PII-scrubbed before export. The GPU box stores no user data or tokens, though it sees live audio and text in transit over the tunnel. Tools such as Swiggy and Google receive what they need to act. |
+| 4 | **Privacy** | Audio is not stored by default. Traces are PII-scrubbed before export. The GPU box stores no user data or tokens, though it sees live audio and text in transit over the tunnel. Tools such as Google receive what they need to act. |
 
 **Constraints**
 
 | Constraint | Consequence |
 |---|---|
 | Apple M5, 16 GB, no NVIDIA GPU | CUDA, TensorRT and GPU Triton exist only on the rented box. The Mac runs CPU/Metal builds. |
-| Minimal GPU budget | NVIDIA L4 24 GB on RunPod, about $0.39 an hour, in short sprints. |
+| Minimal GPU budget | A 24 GB NVIDIA card (L4 class) from a provider chosen later, rented in short sprints. |
 | One developer | One app deployable, Postgres as the only datastore, and a light observability stack. |
 | Single user | Simple auth; admission control is still built and measured. |
 
@@ -154,9 +154,9 @@ flowchart LR
     NORM --> EMB[Embed<br/>bge-m3]
     EMB --> PGV[(pgvector<br/>top-k memories)]
     PGV --> LLM[LLM<br/>3-4B, LoRA]
-    LLM <-->|MCP| TOOLS[Tools<br/>Swiggy, Calendar, search]
+    LLM <-->|MCP| TOOLS[Tools<br/>mock grocery, Calendar, search]
     LLM --> NORM2[Normaliser out<br/>numbers to words]
-    NORM2 --> TTS[TTS<br/>Indic Parler / Magpie]
+    NORM2 --> TTS[TTS<br/>Magpie]
     TTS -->|audio chunks, WebSocket| SPK([Speaker])
 
     classDef browser fill:#e3f2fd,stroke:#1565c0,color:#0d2a4a
@@ -201,14 +201,14 @@ flowchart TB
     subgraph FRY[Fryday]
         CORE[Fryday system<br/>web client + app service + models]
     end
-    GPU[(Rented NVIDIA L4<br/>RunPod, on demand)]
-    SWIGGY[Swiggy MCP<br/>Food, Instamart]
+    GPU[(Rented NVIDIA GPU<br/>24 GB, on demand)]
+    SWIGGY[Mock grocery MCP<br/>Swiggy-style, local]
     GCAL[Google Calendar API]
     SEARCH[Web search API]
     LF[Langfuse Cloud<br/>traces, PII-scrubbed]
 
     USER -->|voice + taps, browser| CORE
-    CORE -->|KServe gRPC + OpenAI HTTP over Tailscale| GPU
+    CORE -->|KServe gRPC + OpenAI HTTP over SSH tunnel| GPU
     CORE -->|MCP| SWIGGY
     CORE -->|HTTPS, OAuth| GCAL
     CORE -->|HTTPS| SEARCH
@@ -290,7 +290,7 @@ flowchart TB
     ROOT --> MR[models/<br/>Triton model repository]
     ROOT --> MLD[ml/<br/>data, training, export]
     ROOT --> EV[eval/<br/>frozen sets, harness, gate]
-    ROOT --> INF[infra/<br/>compose, GPU scripts, Terraform]
+    ROOT --> INF[infra/<br/>compose, GPU scripts, SSH tunnel]
     ROOT --> DOC[docs/<br/>specs, EXPERIMENTS.md]
 
     APPD --> M1[gateway]
@@ -435,7 +435,7 @@ sequenceDiagram
 
 **Latency budget** (copied from HLD §2, which is authoritative; hypotheses to measure)
 
-| Stage | GPU (L4) | Mac |
+| Stage | GPU (24 GB) | Mac |
 |---|---|---|
 | End of utterance | ~0 with second tap | same |
 | ASR, 3–5 s utterance | 300–500 ms | 1–2 s |
@@ -502,10 +502,22 @@ stateDiagram-v2
 - **Read-back:** the assistant reads back text built from the **stored row**, never from fresh LLM output, so injected text can't change what you approve.
 - **Compare-and-set:** approve and expire both use `UPDATE … WHERE status = 'pending' AND expires_at > now()`, so two confirmations can't both win and an expired approval can't be confirmed.
 - **Phrase and tap are bound:** both must carry the same `approval_id` and `payload_hash`.
-- **At-most-once with reconciliation:** a reconciler runs at startup and every 60 s. It moves any `executing` row older than 30 s to `unknown`, then resolves it by order-status lookup. Exactly-once is claimed only if spike 0 shows Swiggy honours idempotency keys.
+- **At-most-once with reconciliation:** a reconciler runs at startup and every 60 s. It moves any `executing` row older than 30 s to `unknown`, then resolves it by order-status lookup. The mock can either honour or ignore idempotency keys, so both cases are tested; the invariant is orders per approval ≤ 1.
 - **Amount as text:** the approval card always shows the amount, items and address as text.
-- **No resends:** a spend action is **never re-sent**. A timeout becomes `unknown`, and Fryday asks Swiggy for the order status.
-- **What "done" means for Swiggy:** a Swiggy order passes through `PENDING_PAYMENT` and is paid by UPI using Swiggy's MCP payment tools. `done` means `confirm_order` returned `PLACED`; `FAILED` maps to `failed`. Access is through the Swiggy Builders Club, which needs approval.
+- **No resends:** a spend action is **never re-sent**. A timeout becomes `unknown`, and Fryday asks the grocery server for the order status.
+- **What "done" means:** the v1 mock copies Swiggy's flow. An order passes through `PENDING_PAYMENT`; `done` means `confirm_order` returned `PLACED`, and `FAILED` maps to `failed`.
+- **Fault modes in the mock:**
+  - response dropped after commit;
+  - timeout before commit;
+  - idempotency key ignored;
+  - stuck payment;
+  - eventually-consistent status;
+  - 5xx;
+  - schema drift;
+  - crash between persisting the key and making the call.
+  
+  Every one must keep orders per approval ≤ 1.
+- **A real Swiggy adapter** (Builders Club) is deferred, and must pass the same contract tests.
 - **Non-spend tools** get one retry with the same idempotency key. `PROPOSED`: approval for non-spend risky actions (sending, deleting) is voice-only.
 
 ### 9.4 Failure and degradation
@@ -551,21 +563,21 @@ flowchart LR
         TC[Triton CPU in Docker<br/>ONNX Runtime + Python backends<br/>or plain ORT if spike 0 fails]
         MLX[MLX-LM server<br/>native macOS, 4-bit]
     end
-    subgraph GPU[RunPod L4, 24 GB]
+    subgraph GPU[Rented GPU, 24 GB]
         TG[Triton GPU<br/>TensorRT, Python backend CT2]
         VLLM[vLLM<br/>AWQ / GPTQ 4-bit]
     end
     APP -->|KServe v2 gRPC| TC
     APP -->|OpenAI HTTP| MLX
-    APP -->|KServe v2 gRPC via Tailscale| TG
-    APP -->|OpenAI HTTP via Tailscale| VLLM
+    APP -->|KServe v2 gRPC via SSH tunnel| TG
+    APP -->|OpenAI HTTP via SSH tunnel| VLLM
 ```
 
 **What it shows.** The app makes the same contract calls on both machines. One setting chooses the target.
 
 **What is not identical.** The 4-bit formats differ (MLX against AWQ/GPTQ), and so do the ASR and TTS builds. That's why the release gate scores each (model, backend, format) row separately and tracks a **Mac-versus-GPU divergence** metric (§11.3).
 
-**GPU memory layout on a 24 GB L4** (copied from HLD §3; an estimate pending the spike; the overhead figure is `PROPOSED`)
+**GPU memory layout on a 24 GB card** (copied from HLD §3; an estimate pending the spike; the overhead figure is `PROPOSED`)
 
 | Allocation | ~GB |
 |---|---|
@@ -596,19 +608,19 @@ vLLM reserves most of the GPU by default, so its memory fraction must be capped 
 
 | Item | Choice |
 |---|---|
-| Candidates | `openai/whisper-large-v3-turbo` (licence: verify); `Oriserve/Whisper-Hindi2Hinglish-Apex` (verified: Apache-2.0, outputs **Roman-script** Hinglish), with `…-Prime` as the alternative; streaming-native: NVIDIA Nemotron ASR with Hindi or AI4Bharat IndicConformer (verify ID, Hindi, streaming) |
+| Candidates | All ungated. `openai/whisper-large-v3-turbo` (verified: MIT); `Oriserve/Whisper-Hindi2Hinglish-Apex` (verified: Apache-2.0, outputs **Roman-script** Hinglish), with `…-Prime` as the alternative; streaming-native: `nvidia/nemotron-3.5-asr-streaming-0.6b` (verified: OpenMDW, Hindi included) |
 | Problem to fix | Names of products, brands, places and people inside mixed Hindi-English speech |
-| Training data | Public Hindi and Indian-English sets (IndicVoices, Kathbath, Shrutilipi, Common Voice, FLEURS); code-switched sets (MUCS, CS-FLEURS); synthetic name-dense speech made with an open TTS |
+| Training data | Public sets: IndicVoices Hindi, Kathbath train, MUCS 2021 Hi-En train (FLEURS and Common Voice if needed); synthetic name-dense speech made with an open TTS. CS-FLEURS is not used (non-commercial, mostly synthetic). |
 | Method | LoRA on GPU sprint 1, merge, quantise |
 | Serve | Mac: CT2/ONNX int8. GPU: CT2 fp16/int8 in the Triton Python backend; TensorRT-LLM encoder as an experiment |
-| Evaluate | WER and entity accuracy on **real voices from speakers not in training**, plus a synthetic-only dev set to catch TTS-quirk overfitting |
+| Evaluate | WER on public speaker-disjoint test splits (MUCS 2021 test, Kathbath test-unknown); entity accuracy on a 30–60 min **own-voice entity set** (test only); plus a synthetic-only dev set to catch TTS-quirk overfitting |
 | You learn | Audio features (log-mel), encoder-decoder ASR, LoRA on speech, why Whisper isn't streaming, and TensorRT on a hard model |
 
 **LLM — decide, answer, call tools**
 
 | Item | Choice |
 |---|---|
-| Candidates | `Qwen/Qwen3-4B-Instruct-2507` (verified: Apache-2.0, tool calling); `meta-llama/Llama-3.2-3B-Instruct` (verified: Llama 3.2 licence, gated, Hindi officially supported); `google/gemma-3-4b-it` (verified: Gemma licence, gated, no native function calling). Check for newer 2026 releases. |
+| Candidates | `Qwen/Qwen3-4B-Instruct-2507` (verified: Apache-2.0, ungated, tool calling) as the default. Any newer **ungated** 2026 3–4B model with tool calling may join the baseline. |
 | Problem to fix | Reliable tool calls with valid arguments; natural Hinglish at spoken length |
 | Training data | About 5–10k synthetic Hinglish tool conversations, made by an open-weight generator and checked against mock tools; a small share of public function-calling data (Glaive, xLAM); hand-written seeds |
 | Method | LoRA SFT (PEFT on GPU sprint 1; small MLX LoRA runs on the Mac), merge, 4-bit quantise |
@@ -620,7 +632,7 @@ vLLM reserves most of the GPU by default, so its memory fraction must be capped 
 
 | Item | Choice |
 |---|---|
-| Candidates | `ai4bharat/indic-parler-tts` (verified: Hindi, Apache 2.0, gated); `nvidia/magpie_tts_multilingual_357m` (verified: Hindi, NVIDIA Open Model License; batched synthesis, not native streaming, so Fryday streams by sending chunks) |
+| Candidates | `nvidia/magpie_tts_multilingual_357m` (verified: ungated, Hindi, NVIDIA Open Model License; batched synthesis, not native streaming, so Fryday streams by sending chunks); fallback `facebook/mms-tts-hin` (licence: verify) |
 | Problem to fix | Natural, fast speech for mixed-script text |
 | Method | No fine-tuning in v1. Pick on naturalness and speed, and fix one voice. |
 | Serve | PyTorch/NeMo in the Triton Python backend; ONNX/TensorRT is a stretch |
@@ -676,7 +688,7 @@ flowchart LR
 ### 11.3 Release gate and test sets
 
 - **Frozen sets:**
-  - ASR: real voices only, from speakers absent from training.
+  - ASR: public speaker-disjoint test splits, plus the own-voice entity set (test only).
   - LLM: 200 hand-reviewed tool conversations.
   - Every use of a frozen set is counted, and frozen sets are never used for tuning.
 - **Hygiene:** dedup and template-overlap checks between train and test.
@@ -750,27 +762,32 @@ flowchart TB
 
 ```mermaid
 flowchart LR
-    subgraph LOCAL[Mac: Tailscale node]
+    subgraph LOCAL[Mac]
         APPL[App service]
-        SCRIPT[gpu up / down script<br/>runpodctl or Terraform]
+        TUN[SSH tunnel sidecar<br/>autossh, -L 127.0.0.1]
+        SCRIPT[gpu up / down script<br/>provider CLI / API]
     end
-    subgraph BOX[RunPod L4 box: Tailscale node, ephemeral]
-        TRG[Triton GPU]
-        VL[vLLM, --api-key]
-        DCGM[DCGM exporter<br/>GPU days only]
+    subgraph BOX[Rented GPU box, ephemeral]
+        SSHD[sshd<br/>key-only, PermitOpen]
+        TRG[Triton GPU<br/>127.0.0.1]
+        VL[vLLM, --api-key<br/>127.0.0.1]
         DMS[Dead-man switch<br/>no heartbeat, self-terminate]
     end
-    SCRIPT -->|provider API: create, inject secrets, destroy| BOX
-    APPL ==>|WireGuard tunnel: gRPC KServe v2| TRG
-    APPL ==>|WireGuard tunnel: OpenAI HTTP| VL
-    APPL -.->|heartbeat over tunnel| DMS
+    SCRIPT -->|provider API: create, inject key + secrets, destroy| BOX
+    APPL --> TUN
+    TUN ==>|SSH: one TCP connection| SSHD
+    SSHD -->|forward: gRPC KServe v2| TRG
+    SSHD -->|forward: OpenAI HTTP| VL
+    TUN -.->|heartbeat| DMS
 ```
 
 **Why.**
-- The Mac and the box are peers on a private Tailscale network.
+- The Mac reaches the box only through an SSH tunnel, using a per-session ed25519 key. The tunnel runs as a compose sidecar, because containers can't reach the host's loopback.
 - The box does inference only. It stores no user data and no OAuth tokens, though it sees live audio and text in transit.
 - A per-user daily minute cap limits usage.
-- It has no public ports. RunPod pods usually lack a TUN device, so Tailscale runs in **userspace-networking** mode. Services bind to localhost and are exposed with `tailscale serve`, which the sprint-2 preflight checks.
+- The only public port is the key-only sshd. `PermitOpen` allows just the Triton and vLLM ports, and both services bind to 127.0.0.1.
+- SSH and gRPC keepalives keep long streams alive. One TCP connection carries everything, so p95 latency is measured, not just RTT.
+- Provider criteria: direct VM SSH with `-L`, Docker + NVIDIA toolkit, `SYS_ADMIN` for Nsight, and persistent model cache.
 - Cost guards: a teardown timer, a dead-man switch, a provider budget alert and a sprint checklist.
 
 *Source: HLD §6.*
@@ -806,7 +823,7 @@ flowchart LR
     APPT --> PGT
 ```
 
-- **Auth:** single user with one static access token. The app listens only on localhost or the tailnet and checks Origin on the WebSocket. The token goes in the first message, never in the URL. Google scope: `calendar.events.owned`.
+- **Auth:** single user with one static access token. The app listens only on localhost and checks Origin on the WebSocket. The token goes in the first message, never in the URL. Google scope: `calendar.events.owned`.
 - **Supply chain:** images pinned by digest, a lockfile, `pip-audit`, Trivy and gitleaks, and models pinned by revision and hash in `models.lock`.
 - **Prompt injection:** tool output is wrapped as data, approval text comes from structured fields, and an injection test suite runs in CI.
 - **Privacy:** audio is off by default, opt-in and deletable. Transcripts are kept 30 days, a `forget` command deletes everything about the user, and the PII scrubber also covers local logs.
@@ -825,13 +842,13 @@ flowchart LR
 | GitHub Actions CI | Unit tests (normaliser, chunker, approval state machine, memory); contract tests against a **stub** KServe/OpenAI server; MCP tests with recorded responses; injection suite | No |
 | Local `make e2e` | Recorded Hinglish audio replayed end to end; behavioural contract tests (tool-call schema, chat-template parity) | Yes, Mac |
 | GPU sprint script | The same e2e and contract suite against the GPU; load test | Yes, GPU |
-| Manual | Live Swiggy and Google smoke test | Live |
+| Manual | Live Google Calendar smoke test (no live grocery orders in v1) | Live |
 
 ### 14.4 Config and secrets
 
 - **One setting** switches the model backend: `MODEL_BACKEND=mac|gpu`.
 - **Local secrets** are environment files, never committed.
-- **The GPU box** receives only inference secrets (the vLLM API key and Tailscale auth) at boot, and its disk is wiped on teardown.
+- **The GPU box** receives only inference secrets (the vLLM API key and the per-session SSH public key) at boot, and its disk is wiped on teardown.
 
 ### 14.5 Operations
 
@@ -889,7 +906,9 @@ The decisions come from the HLD. The **Why**, **Rejected** and **Consequence** c
 | A1 | FastAPI as one deployable | One person; fewer moving parts | Separate gateway and orchestration services | Split later if load requires |
 | A2 | LangGraph agent with an approval interrupt | Pause and resume on approval is built in | A hand-rolled loop | Approval state also stored in Postgres |
 | A3 | Voice plus tap for spend actions | Speech alone can be misheard or spoofed | Voice only | Needs the web UI for purchases |
-| A4 | RunPod L4 with Tailscale | Cheapest suitable card; private network | Lambda (no L4); public ports | Terraform provider is early-stage, `runpodctl` script as fallback |
+| A4 | GPU provider chosen later; SSH tunnel for the link | Every provider offers SSH, there's no extra account, and no public ports beyond sshd | Tailscale (needs an extra account and TUN support); public ports | The provider must support direct SSH `-L` forwarding (Vast.ai and Lambda are documented; RunPod's proxy SSH isn't) |
+| A6 | Mock grocery MCP server in v1 | Safe, free and repeatable; fault injection exercises the money path harder than live Swiggy safely allows | Real Swiggy now | A real adapter later must pass the same contract tests |
+| A7 | Ungated open models by default | No access requests; works out of the box | Llama, Gemma, Indic Parler (gated) | Smaller comparison set |
 | A5 | MLflow local file store; DVC for data; `models.lock` pins what is served | Light, no server; exact provenance | Hosted registry | Rollback = repoint `models.lock` |
 
 *Source: HLD Decisions, §1, §3, §6, §7.*
@@ -924,7 +943,7 @@ The exit criteria and the "You learn" column below are `PROPOSED`.
 | Milestone | Goal | Runs on | You learn | Exit criteria |
 |---|---|---|---|---|
 | **M0 Spikes** | Prove the risky assumptions | Mac | Triton basics, MLX, memory budgeting | Each spike in §17 has a recorded pass or fail and the fallback chosen |
-| **M1 Text agent** | Typed Hinglish in, real tools out, approvals, memory | Mac | LangGraph, MCP, state machines, eval harness | LLM baseline scored on the frozen set; approval state machine unit-tested; live Swiggy and Calendar smoke test passes |
+| **M1 Text agent** | Typed Hinglish in, real tools out, approvals, memory | Mac | LangGraph, MCP, state machines, eval harness | LLM baseline scored on the frozen set; approval state machine and reconciler pass every mock fault mode (orders per approval ≤ 1); live Calendar smoke test passes |
 | **M2 Voice** | Speak in, hear out, with barge-in | Mac | Audio basics, WebSocket streaming, ONNX export, Triton CPU | `make e2e` passes on recorded audio; first-audio latency measured on the Mac; barge-in drops stale chunks |
 | **M3 LLM fine-tune** | Better tool calls and Hinglish | GPU sprint 1 + Mac | LoRA SFT, synthetic data, quantisation | Gate passed for at least one (backend, format) row; E1–E3 written up |
 | **M4 GPU serving** | Everything on GPU Triton, optimised | GPU sprint 2 | ONNX→TensorRT, Triton config, Nsight, CUDA principles | E4, E6, E7 and E8 written up; GPU contract and e2e suite pass |
@@ -944,14 +963,14 @@ The HLD lists these unknowns. The pass criteria, fallbacks and "Blocks" column a
 | S0-1 | Does Triton's arm64 CPU container run on the M5 under Docker? | Serves an ONNX model through KServe v2 gRPC | Plain ONNX Runtime/CT2 behind the same contract | M2 |
 | S0-2 | Does the `core` profile fit in 16 GB alongside MLX? | No swapping during an e2e turn | Smaller models on the Mac (e5-small, smaller ASR) | M2 |
 | S0-3 | Do candidate LLMs produce valid tool calls through `mlx_lm.server`? | Tool calls parse on the Mac eval set | Validate-and-repair or a different candidate | M1 |
-| S0-4 | Can we get Swiggy Builders access, and with what limits? | Sandbox or live access with known caps | Build approvals against a recorded mock first | M1 |
+| S0-4 | *Deferred with real Swiggy:* Builders Club access and limits | — | Mock grocery server in v1 | — |
 | S0-5 | Exact model IDs and licences for the candidates marked "verify" | Each confirmed on its model card | Drop the candidate | M1/M2 |
-| S0-6 | Are Nsight GPU counters available on RunPod? | `nsys` with GPU metrics works | Timeline-only profiling | M4 |
+| S0-6 | Are Nsight GPU counters available on the chosen provider? | `nsys` with GPU metrics works | Timeline-only profiling | M4 |
 | S0-7 | Do all models fit in 24 GB together? | Measured below 22 GB with vLLM capped | Smaller KV cap or TTS on CPU | M4 |
 | S0-8 | Script convention: Roman inside vs Devanagari everywhere | Better WER/entity accuracy and correct TTS pronunciation on real samples | The other option | M2 |
 | S0-9 | Hindi numbers → words: does NeMo or `num2words` pass our golden tests? | All golden cases pass | Custom rule set | M2 |
-| S0-10 | Does Swiggy honour idempotency keys? | Documented or proven with a duplicate request in the sandbox | At-most-once plus reconciler (default design) | M1 |
-| S0-11 | Tailscale userspace mode plus `tailscale serve` on a RunPod pod | The Mac reaches Triton and vLLM with no public ports | Another provider, or a WireGuard sidecar | M4 |
+| S0-10 | *Now a mock config flag:* idempotency `honoured` or `ignored` | Reconciler keeps orders per approval ≤ 1 in both modes | — | M1 |
+| S0-11 | SSH tunnel to the chosen provider: gRPC streaming + HTTP + reconnect | Streams survive 30 min; autossh reconnects; no public ports except sshd | Another provider | M4 |
 | — | Does TTS export to ONNX? | Parity within tolerance | Stay on PyTorch in the Python backend | Stretch only |
 
 *Source: HLD §11, "Still unverified".*
