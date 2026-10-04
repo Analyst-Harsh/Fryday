@@ -6,7 +6,7 @@
 | **Date** | 2026-10-04 |
 | **Owner** | Harshit Goyal |
 | **Source of truth** | [Fryday HLD](2026-10-04-fryday-hld-design.md) |
-| **Last synced with HLD** | commit `7d687a1` |
+| **Last synced with HLD** | HLD v3 (2026-10-04) |
 
 ## How to read this document
 
@@ -92,7 +92,7 @@ Always-on hosting is also out, because the runtime is on demand.
 | Rank | Quality goal | What it means in practice |
 |---|---|---|
 | 1 | **Learning depth** | Each must-learn topic has a hands-on, measured deliverable (§12, §16). |
-| 2 | **Responsiveness** | Time to first audio is about 1.1–1.4 s on the GPU (hypothesis). Interrupting stops the reply immediately. |
+| 2 | **Responsiveness** | Time to first audio is about 1.4–1.8 s on the GPU (hypothesis; SLO p95 ≤ 2.0 s). Interrupting stops the reply immediately. |
 | 3 | **Cost cap** | The GPU is off by default. Each sprint is scripted and the box tears itself down. There is a per-user daily minute cap. |
 | 4 | **Privacy** | Audio is not stored by default. Traces are PII-scrubbed before export. The GPU box stores no user data or tokens, though it sees live audio and text in transit over the tunnel. Tools such as Swiggy and Google receive what they need to act. |
 
@@ -305,7 +305,7 @@ flowchart TB
 | Module | Responsibility | Depends on |
 |---|---|---|
 | `gateway` | WebSocket sessions, auth, admission control, framing (`turn_id`, `seq`) | turn_manager |
-| `turn_manager` | VAD, end of utterance, barge-in epochs, cancellation | backends |
+| `turn_manager` | Tap boundaries (VAD later), barge-in epochs, cancellation | backends |
 | `agent` | LangGraph loop, tool selection, approval interrupt and state machine | backends, tools_mcp, memory, Postgres |
 | `memory` | Retrieve top-k facts; extract new facts after a turn | backends (embed), Postgres |
 | `normaliser` | Devanagari/Latin script convention; numbers, currency and dates into speakable words | — |
@@ -437,13 +437,15 @@ sequenceDiagram
 
 | Stage | GPU (L4) | Mac |
 |---|---|---|
-| End of utterance | ~0 with second tap / 200 ms with VAD (later) | same |
+| End of utterance | ~0 with second tap | same |
 | ASR, 3–5 s utterance | 300–500 ms | 1–2 s |
 | Memory lookup | 50 ms | 80 ms |
 | LLM first token | 250 ms | ~600 ms |
 | TTS first audio | 200–400 ms | spike |
-| Tunnel round trip | +30–150 ms | — |
-| **First audio** | **~1.1–1.4 s** | **~3 s (dev only)** |
+| Tunnel round trip | 30–150 ms **per hop**, 4 hops (ASR, embed, LLM, TTS) | — |
+| **First audio** | **~1.4–1.8 s** | **~3 s (dev only)** |
+
+The LLM row also has to cover the ~6-word first chunk, not just the first token. Each model runs a warm-up call before its readiness probe goes green.
 
 **Which optimisation attacks which stage.**
 - ASR: CT2 int8, the TensorRT encoder, and a streaming-native ASR candidate.
@@ -484,10 +486,11 @@ stateDiagram-v2
     [*] --> pending: risky tool call\n(payload + hash stored)
     pending --> approved: confirm phrase AND UI tap\n(compare-and-set)
     pending --> expired: ~45 s by DB clock
+    approved --> expired: ~10 s, never started
     approved --> executing: idempotency key persisted
     executing --> done: tool success
     executing --> failed: tool error
-    executing --> unknown: timeout
+    executing --> unknown: timeout, or crash\n(reconciler after 30 s)
     unknown --> done: status lookup finds the order
     unknown --> failed: status lookup finds no order
     done --> [*]
@@ -497,10 +500,12 @@ stateDiagram-v2
 
 **The rules behind the picture**
 - **Read-back:** the assistant reads back text built from the **stored row**, never from fresh LLM output, so injected text can't change what you approve.
-- **Compare-and-set:** each transition is `UPDATE … WHERE status = 'pending'`, so two confirmations can't both win.
+- **Compare-and-set:** approve and expire both use `UPDATE … WHERE status = 'pending' AND expires_at > now()`, so two confirmations can't both win and an expired approval can't be confirmed.
+- **Phrase and tap are bound:** both must carry the same `approval_id` and `payload_hash`.
+- **At-most-once with reconciliation:** a reconciler runs at startup and every 60 s. It moves any `executing` row older than 30 s to `unknown`, then resolves it by order-status lookup. Exactly-once is claimed only if spike 0 shows Swiggy honours idempotency keys.
+- **Amount as text:** the approval card always shows the amount, items and address as text.
 - **No resends:** a spend action is **never re-sent**. A timeout becomes `unknown`, and Fryday asks Swiggy for the order status.
-- **What "done" means for Swiggy:** a Swiggy order passes through `PENDING_PAYMENT` and is paid by UPI using Swiggy's MCP payment tools. `done` means `confirm_order` succeeded.
-- **The two `unknown` exits are `PROPOSED`.** The HLD says only "then query order status".
+- **What "done" means for Swiggy:** a Swiggy order passes through `PENDING_PAYMENT` and is paid by UPI using Swiggy's MCP payment tools. `done` means `confirm_order` returned `PLACED`; `FAILED` maps to `failed`. Access is through the Swiggy Builders Club, which needs approval.
 - **Non-spend tools** get one retry with the same idempotency key. `PROPOSED`: approval for non-spend risky actions (sending, deleting) is voice-only.
 
 ### 9.4 Failure and degradation
@@ -529,7 +534,7 @@ flowchart TD
 - **Postgres down:** the service reports unhealthy and refuses turns.
 - **OAuth or MCP failure:** that tool is disabled with a clear message.
 
-*Source: HLD §2, §7, §8.*
+*Source: HLD §2, §7, §9.*
 
 ---
 
@@ -591,7 +596,7 @@ vLLM reserves most of the GPU by default, so its memory fraction must be capped 
 
 | Item | Choice |
 |---|---|
-| Candidates | `openai/whisper-large-v3-turbo`; an open Hinglish Whisper fine-tune from Oriserve (verify the ID); one streaming-native Hindi model from the AI4Bharat IndicConformer or NVIDIA Parakeet/Canary families (verify Hindi support and streaming) |
+| Candidates | `openai/whisper-large-v3-turbo` (licence: verify); `Oriserve/Whisper-Hindi2Hinglish-Apex` (verified: Apache-2.0, outputs **Roman-script** Hinglish), with `…-Prime` as the alternative; streaming-native: NVIDIA Nemotron ASR with Hindi or AI4Bharat IndicConformer (verify ID, Hindi, streaming) |
 | Problem to fix | Names of products, brands, places and people inside mixed Hindi-English speech |
 | Training data | Public Hindi and Indian-English sets (IndicVoices, Kathbath, Shrutilipi, Common Voice, FLEURS); code-switched sets (MUCS, CS-FLEURS); synthetic name-dense speech made with an open TTS |
 | Method | LoRA on GPU sprint 1, merge, quantise |
@@ -603,11 +608,11 @@ vLLM reserves most of the GPU by default, so its memory fraction must be capped 
 
 | Item | Choice |
 |---|---|
-| Candidates | Open 3–4B instruct models with tool calling. Starting list to verify: `Qwen/Qwen3-4B-Instruct-2507`, `meta-llama/Llama-3.2-3B-Instruct`, `google/gemma-3-4b-it`. Gemma's tool calling is prompt-based, not native. Check for newer 2026 releases. |
+| Candidates | `Qwen/Qwen3-4B-Instruct-2507` (verified: Apache-2.0, tool calling); `meta-llama/Llama-3.2-3B-Instruct` (verified: Llama 3.2 licence, gated, Hindi officially supported); `google/gemma-3-4b-it` (verified: Gemma licence, gated, no native function calling). Check for newer 2026 releases. |
 | Problem to fix | Reliable tool calls with valid arguments; natural Hinglish at spoken length |
 | Training data | About 5–10k synthetic Hinglish tool conversations, made by an open-weight generator and checked against mock tools; a small share of public function-calling data (Glaive, xLAM); hand-written seeds |
 | Method | LoRA SFT (PEFT on GPU sprint 1; small MLX LoRA runs on the Mac), merge, 4-bit quantise |
-| Serve | Mac: MLX 4-bit through `mlx_lm.server`. GPU: vLLM with AWQ or GPTQ |
+| Serve | Mac: MLX 4-bit through `mlx_lm.server`; streaming plus tool calling is unverified (spike S0-3). GPU: vLLM with AWQ or GPTQ |
 | Evaluate | Tool-choice accuracy, argument validity, judge-scored Hinglish quality (judge differs from the generator and is calibrated on human labels), on 200 frozen hand-reviewed conversations |
 | You learn | SFT and LoRA, chat templates, constrained decoding, quantisation trade-offs, KV cache, continuous batching |
 
@@ -615,7 +620,7 @@ vLLM reserves most of the GPU by default, so its memory fraction must be capped 
 
 | Item | Choice |
 |---|---|
-| Candidates | `ai4bharat/indic-parler-tts` (verified: Hindi, Apache 2.0, gated); `nvidia/magpie_tts_multilingual_357m` (verified: Hindi, NVIDIA Open Model License) |
+| Candidates | `ai4bharat/indic-parler-tts` (verified: Hindi, Apache 2.0, gated); `nvidia/magpie_tts_multilingual_357m` (verified: Hindi, NVIDIA Open Model License; batched synthesis, not native streaming, so Fryday streams by sending chunks) |
 | Problem to fix | Natural, fast speech for mixed-script text |
 | Method | No fine-tuning in v1. Pick on naturalness and speed, and fix one voice. |
 | Serve | PyTorch/NeMo in the Triton Python backend; ONNX/TensorRT is a stretch |
@@ -626,18 +631,27 @@ vLLM reserves most of the GPU by default, so its memory fraction must be capped 
 
 | Item | Choice |
 |---|---|
-| Candidates | `BAAI/bge-m3` (verified: 568M, MIT, multilingual); fallback `intfloat/multilingual-e5-small` on the Mac (verify) |
+| Candidates | `BAAI/bge-m3` (verified: MIT, multilingual); fallback `intfloat/multilingual-e5-small` on the Mac (verify) |
 | Method | No training. It's the **easy TensorRT target**. |
 | Serve | Mac: ONNX. GPU: TensorRT fp16. |
 | Evaluate | Output parity (cosine) between PyTorch, ONNX and TensorRT, plus latency |
 | You learn | ONNX export, parity testing, building a TensorRT engine with dynamic shapes |
 
-**VAD**
+**Text normaliser** (rules, not a model)
 
 | Item | Choice |
 |---|---|
-| Model | Silero VAD (verified: MIT, under 1 ms per chunk on the CPU) |
-| Runs | App service CPU, never the model server |
+| Out, before TTS | Our own rule set turning numbers into Hindi words. It uses a 0–99 word table, the Indian grouping (सौ, हज़ार, लाख, करोड़) and patterns for money, time, date, units and abbreviations. Example: ₹112 → एक सौ बारह रुपये. NeMo supports Hindi only for words → numbers, so it's adopted only if spike 0 shows its numbers → words works. |
+| In, after ASR | The script convention is decided in spike S0-8. Option A keeps Roman Hinglish inside and converts to Devanagari only before TTS. Option B fine-tunes the ASR to output Devanagari for Hindi words. Transliteration (IndicXlit, verify) is the fallback. |
+| Evaluate | Golden unit tests for every rupee, number, time and date format |
+| Safety | Amounts are always shown as text on the approval card, so a TTS mistake never decides a purchase |
+
+**VAD — later, not v1**
+
+| Item | Choice |
+|---|---|
+| Model | Silero VAD (MIT, under 1 ms per chunk on the CPU) |
+| Runs | App service CPU, never the model server. v1 uses tap-to-stop instead. |
 
 ### 11.2 ML lifecycle
 
@@ -756,7 +770,7 @@ flowchart LR
 - The Mac and the box are peers on a private Tailscale network.
 - The box does inference only. It stores no user data and no OAuth tokens, though it sees live audio and text in transit.
 - A per-user daily minute cap limits usage.
-- It has no public ports, and its services are bound to the tunnel interface.
+- It has no public ports. RunPod pods usually lack a TUN device, so Tailscale runs in **userspace-networking** mode. Services bind to localhost and are exposed with `tailscale serve`, which the sprint-2 preflight checks.
 - Cost guards: a teardown timer, a dead-man switch, a provider budget alert and a sprint checklist.
 
 *Source: HLD §6.*
@@ -792,9 +806,10 @@ flowchart LR
     APPT --> PGT
 ```
 
-- **Auth:** single user, session cookie plus an Origin check on the WebSocket. The token goes in the first message, never in the URL.
+- **Auth:** single user with one static access token. The app listens only on localhost or the tailnet and checks Origin on the WebSocket. The token goes in the first message, never in the URL. Google scope: `calendar.events.owned`.
+- **Supply chain:** images pinned by digest, a lockfile, `pip-audit`, Trivy and gitleaks, and models pinned by revision and hash in `models.lock`.
 - **Prompt injection:** tool output is wrapped as data, approval text comes from structured fields, and an injection test suite runs in CI.
-- **Privacy:** audio is off by default, opt-in and deletable.
+- **Privacy:** audio is off by default, opt-in and deletable. Transcripts are kept 30 days, a `forget` command deletes everything about the user, and the PII scrubber also covers local logs.
 - **Known v1 risk:** there's no speaker verification. The UI tap mitigates it.
 
 ### 14.2 Observability
@@ -818,7 +833,18 @@ flowchart LR
 - **Local secrets** are environment files, never committed.
 - **The GPU box** receives only inference secrets (the vLLM API key and Tailscale auth) at boot, and its disk is wiped on teardown.
 
-*Source: HLD §1 (item 6), §6, §7, §9.*
+### 14.5 Operations
+
+| Concern | v1 approach |
+|---|---|
+| SLOs | p95 first audio ≤ 2.0 s on the GPU (≤ 4 s on the Mac); turn success ≥ 98%; zero unresolved spend `unknown` after 5 min |
+| Alerts | A small script checks Prometheus and raises a desktop notification on an SLO breach, a stuck `unknown` or a missed GPU heartbeat |
+| Timeouts | ASR 3 s, LLM first token 2 s, TTS chunk 2 s, MCP non-spend 5 s, MCP spend 15 s and then `unknown` (initial values) |
+| Backups | Nightly encrypted `pg_dump`, 7 kept, quarterly restore drill. The Fernet key is stored apart from the dumps. |
+| Runbook | `RUNBOOK.md` covers: GPU box dead or tunnel down, stuck `unknown`, expired OAuth, Postgres restore, model rollback |
+| Versioning | The WebSocket protocol has a `v` field; models are versioned in the Triton repository; Alembic migrations run on startup |
+
+*Source: HLD §1 (item 6), §6, §7, §8, §10.*
 
 ---
 
@@ -864,7 +890,7 @@ The decisions come from the HLD. The **Why**, **Rejected** and **Consequence** c
 | A2 | LangGraph agent with an approval interrupt | Pause and resume on approval is built in | A hand-rolled loop | Approval state also stored in Postgres |
 | A3 | Voice plus tap for spend actions | Speech alone can be misheard or spoofed | Voice only | Needs the web UI for purchases |
 | A4 | RunPod L4 with Tailscale | Cheapest suitable card; private network | Lambda (no L4); public ports | Terraform provider is early-stage, `runpodctl` script as fallback |
-| A5 | MLflow local file store; DVC for data | Light, no server | Hosted registry | Enough for one person |
+| A5 | MLflow local file store; DVC for data; `models.lock` pins what is served | Light, no server; exact provenance | Hosted registry | Rollback = repoint `models.lock` |
 
 *Source: HLD Decisions, §1, §3, §6, §7.*
 
@@ -891,12 +917,7 @@ flowchart LR
 
 Blue milestones run on the Mac and green ones need the rented GPU.
 
-**Note: the HLD needs a fix here.** HLD §6 puts ASR fine-tuning in sprint 1, but HLD §10 places it at M5, after M4.
-
-`PROPOSED` resolution:
-- Train the ASR LoRA in sprint 1, after the LLM, so the GPU is rented once for training.
-- Do the TensorRT encoder work (E5) in sprint 2.
-- Evaluate and write up M5 once both are done.
+**ASR timing (HLD v3):** the ASR LoRA is trained in sprint 1, after the LLM. The TensorRT encoder work (E5) runs in sprint 2, and M5 is evaluated once both are done.
 
 The exit criteria and the "You learn" column below are `PROPOSED`.
 
@@ -904,13 +925,13 @@ The exit criteria and the "You learn" column below are `PROPOSED`.
 |---|---|---|---|---|
 | **M0 Spikes** | Prove the risky assumptions | Mac | Triton basics, MLX, memory budgeting | Each spike in §17 has a recorded pass or fail and the fallback chosen |
 | **M1 Text agent** | Typed Hinglish in, real tools out, approvals, memory | Mac | LangGraph, MCP, state machines, eval harness | LLM baseline scored on the frozen set; approval state machine unit-tested; live Swiggy and Calendar smoke test passes |
-| **M2 Voice** | Speak in, hear out, with barge-in | Mac | Audio basics, VAD, WebSocket streaming, ONNX export, Triton CPU | `make e2e` passes on recorded audio; first-audio latency measured on the Mac; barge-in drops stale chunks |
+| **M2 Voice** | Speak in, hear out, with barge-in | Mac | Audio basics, WebSocket streaming, ONNX export, Triton CPU | `make e2e` passes on recorded audio; first-audio latency measured on the Mac; barge-in drops stale chunks |
 | **M3 LLM fine-tune** | Better tool calls and Hinglish | GPU sprint 1 + Mac | LoRA SFT, synthetic data, quantisation | Gate passed for at least one (backend, format) row; E1–E3 written up |
 | **M4 GPU serving** | Everything on GPU Triton, optimised | GPU sprint 2 | ONNX→TensorRT, Triton config, Nsight, CUDA principles | E4, E6, E7 and E8 written up; GPU contract and e2e suite pass |
 | **M5 ASR fine-tune** | Better names in mixed speech | GPU | Speech LoRA, TensorRT-LLM Whisper | Entity accuracy improved on the real-voice set, past the margin; E5 written up |
 | **M6 Prove it** | Numbers and a demo | GPU sprint 3 | Load testing, capacity, cost | E9–E11 written up; admission limit set from data; demo recorded |
 
-*Source: HLD §4, §10.*
+*Source: HLD §4, §11.*
 
 ---
 
@@ -927,6 +948,10 @@ The HLD lists these unknowns. The pass criteria, fallbacks and "Blocks" column a
 | S0-5 | Exact model IDs and licences for the candidates marked "verify" | Each confirmed on its model card | Drop the candidate | M1/M2 |
 | S0-6 | Are Nsight GPU counters available on RunPod? | `nsys` with GPU metrics works | Timeline-only profiling | M4 |
 | S0-7 | Do all models fit in 24 GB together? | Measured below 22 GB with vLLM capped | Smaller KV cap or TTS on CPU | M4 |
+| S0-8 | Script convention: Roman inside vs Devanagari everywhere | Better WER/entity accuracy and correct TTS pronunciation on real samples | The other option | M2 |
+| S0-9 | Hindi numbers → words: does NeMo or `num2words` pass our golden tests? | All golden cases pass | Custom rule set | M2 |
+| S0-10 | Does Swiggy honour idempotency keys? | Documented or proven with a duplicate request in the sandbox | At-most-once plus reconciler (default design) | M1 |
+| S0-11 | Tailscale userspace mode plus `tailscale serve` on a RunPod pod | The Mac reaches Triton and vLLM with no public ports | Another provider, or a WireGuard sidecar | M4 |
 | — | Does TTS export to ONNX? | Parity within tolerance | Stay on PyTorch in the Python backend | Stretch only |
 
-*Source: HLD §10, "Still unverified".*
+*Source: HLD §11, "Still unverified".*
