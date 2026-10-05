@@ -51,9 +51,6 @@ cp .env.example .env        # optional: compose has defaults; edit for real valu
 
 - **pre-commit** (lefthook): ruff format and fix, pyright on staged files, gitleaks on staged changes.
 - **pre-push**: the full format check, lint, type check and test suite.
-- **CI** (GitHub Actions) on every PR and push to `main`:
-  - checks (format, lint, pyright, pytest);
-  - a gitleaks full-history scan;
-  - a compose job that boots Postgres and checks the `vector` extension.
+- **CI** (GitHub Actions) on every PR and push to `main`: format check, lint, pyright and pytest. Secret scanning (gitleaks) and the compose check run locally only: the pre-commit hook and `make up && make db-check`.
 
 CI never runs real models.

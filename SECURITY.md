@@ -16,6 +16,6 @@ There is no formal SLA and no bug bounty. Confirmed reports get a best-effort fi
 
 - **No secrets in git, ever.** Secrets live only in an untracked `.env` (git-ignored).
 - `.env.example` holds placeholders only and documents every key the app reads.
-- **gitleaks** scans staged changes in the lefthook pre-commit hook and the full history in CI. Never bypass it with `--no-verify`.
+- **gitleaks** scans staged changes in the lefthook pre-commit hook (run `uv run lefthook install` once per clone). Never bypass it with `--no-verify`. GitHub push protection is a server-side backstop for known token formats.
 - A false positive gets an inline `gitleaks:allow` comment or a `.gitleaksignore` entry, with a reason, never a disabled hook.
 - **If a secret is committed or pushed:** rotate (revoke) it first, since rotation is the only real fix. Then purge it from history (`git filter-repo`) and force-push. Assume anything pushed to this public repo has already been scraped.
