@@ -315,6 +315,8 @@ flowchart TB
 
 **Why.** Each module has one job and one interface, so you can test it alone. The `backends` module is the seam that makes local-versus-GPU a config change. `models/` is a real Triton model repository, so the same folder (plus GPU-only variants) is mounted on both machines.
 
+**Compose lives at the repo root** (`compose.yaml`), not in `infra/`, so `docker compose --profile core up` works without `-f`. `infra/` holds what compose mounts (e.g. `infra/db/init.sql`) and the GPU scripts. *(Phase 0.)*
+
 *Source: HLD §1; layout proposed.*
 
 ---

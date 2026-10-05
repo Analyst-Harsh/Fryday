@@ -1,4 +1,4 @@
-.PHONY: sync test lint up down
+.PHONY: sync test lint up down db-check
 
 sync:
 	uv sync --all-packages
@@ -16,3 +16,6 @@ up:
 
 down:
 	docker compose --profile core down
+
+db-check:
+	docker compose exec -T postgres sh -c 'psql -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" -tAc "select extversion from pg_extension where extname='\''vector'\''"' | grep .

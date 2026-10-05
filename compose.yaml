@@ -1,0 +1,33 @@
+# Profiles (HLD §6). `core` = app + Postgres + model backends; phase 0 only
+# has Postgres -- later phases add the app and backends to this SAME profile.
+# `obs` (Prometheus) comes in phase 9.
+#
+# Values come from .env (compose reads it for ${...} interpolation); the
+# defaults let a fresh clone start without one.
+
+services:
+  postgres:
+    profiles: ["core"]
+    # pg16 tag pinned by digest (HLD §7 supply chain). To bump:
+    #   docker buildx imagetools inspect pgvector/pgvector:pg16
+    image: pgvector/pgvector:pg16@sha256:7b822b0aac60967beb1ea5e576b8602c94c300a157d187f385ae3e0da199b90a
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-fryday}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      POSTGRES_DB: ${POSTGRES_DB:-fryday}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432" # localhost only (HLD §7)
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Runs once, on an empty data volume only.
+      - ./infra/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      # TCP (-h 127.0.0.1), not the socket: during first-boot init Postgres
+      # listens only on the socket, so this stays unhealthy until init.sql ran.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
