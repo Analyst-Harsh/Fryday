@@ -6,7 +6,7 @@
 | **Depends on** | — |
 | **Estimate** | 2–3 working days at 2–4 h/day |
 | **HLD refs** | §1.7, §10 |
-| **Status** | In progress |
+| **Status** | Done (2026-10-05, [PR #1](https://github.com/Analyst-Harsh/Fryday/pull/1)) |
 
 ## Scope
 - Create the public GitHub repo and push the existing docs.
@@ -21,9 +21,9 @@
 - Any app logic, client or models.
 
 ## Exit criteria
-- [ ] `make test` and CI are green on a first trivial test.
-- [ ] `docker compose --profile core up` gives a healthy Postgres with the `vector` extension.
-- [ ] gitleaks blocks a planted fake secret.
+- [x] `make test` and CI are green on a first trivial test.
+- [x] `docker compose --profile core up` gives a healthy Postgres with the `vector` extension.
+- [x] gitleaks blocks a planted fake secret.
 
 ## What you learn
 uv workspaces, CI pipelines, compose profiles, pre-commit hooks.
