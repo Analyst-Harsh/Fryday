@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# Actions are pinned by commit SHA (HLD §7 supply chain); the comment is the tag.
+jobs:
+  checks:
+    name: Format, Lint, Type check and Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      # Python 3.12 comes from .python-version; --all-packages installs the
+      # workspace members (the root is virtual).
+      - name: Install dependencies
+        run: uv sync --locked --all-packages
+
+      - name: Format check
+        id: format-check
+        run: uv run ruff format --check .
+
+      - name: Lint
+        id: lint
+        run: uv run ruff check .
+
+      - name: Type check
+        id: type-check
+        run: uv run pyright
+
+      - name: Test
+        id: test
+        run: uv run pytest -q
+
+      - name: Job summary
+        if: always()
+        run: |
+          icon() { case "$1" in success) echo "✅";; failure) echo "❌";; skipped) echo "⏭️";; *) echo "⚠️";; esac; }
+          {
+            echo "| Check | Result |"
+            echo "|---|---|"
+            echo "| Format check | $(icon ${{ steps.format-check.outcome }}) |"
+            echo "| Lint | $(icon ${{ steps.lint.outcome }}) |"
+            echo "| Type check | $(icon ${{ steps.type-check.outcome }}) |"
+            echo "| Test | $(icon ${{ steps.test.outcome }}) |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  secrets:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # On PRs the action reads the PR's commits through the API.
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # full history, so every commit is scanned
+
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # no license needed on a personal account
+
+  compose:
+    name: Compose core profile (Postgres + pgvector)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # No .env in CI: compose.yaml's defaults are used.
+      - name: Start core profile
+        run: make up
+
+      - name: Check vector extension
+        run: make db-check
+
+      - name: Logs on failure
+        if: failure()
+        run: docker compose --profile core logs
+
+      - name: Stop
+        if: always()
+        run: make down

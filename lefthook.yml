@@ -1,0 +1,33 @@
+pre-commit:
+  parallel: false
+  commands:
+    ruff-format:
+      glob: "*.py"
+      run: uv run ruff format {staged_files}
+      stage_fixed: true
+    ruff-lint:
+      glob: "*.py"
+      run: uv run ruff check --fix {staged_files}
+      stage_fixed: true
+    pyright:
+      glob: "*.py"
+      run: uv run pyright {staged_files}
+    # Needs gitleaks >= 8.19 on PATH (brew install gitleaks). GUI git clients
+    # may not have /opt/homebrew/bin on PATH -- commit from the terminal.
+    gitleaks:
+      run: gitleaks git --pre-commit --staged --redact --verbose
+
+# pre-commit only checks staged files, so a change can still break something
+# it didn't touch. pre-push is the full-repo safety net: check-only (a push
+# shouldn't silently rewrite files) plus the whole test suite.
+pre-push:
+  parallel: true
+  commands:
+    ruff-format-check:
+      run: uv run ruff format --check .
+    ruff-lint:
+      run: uv run ruff check .
+    pyright:
+      run: uv run pyright
+    pytest:
+      run: uv run pytest -q
