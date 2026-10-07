@@ -2,7 +2,7 @@
 
 ## Context
 Draft source: `/Users/harshitgoyal/Dev/AI Projects/Fryday/docs/voice_assistant`.
-Fryday is a Hinglish tap-to-talk voice assistant whose real purpose is **learning depth for AI engineering roles**: fine-tuning, audio basics, ONNX, CUDA working principles, TensorRT, Triton — inside a production-grade system. The implementation plan is a separate document.
+Fryday is a Hinglish tap-to-talk voice assistant whose real purpose is **learning depth for AI engineering roles**: fine-tuning, audio basics, ONNX, CUDA working principles, TensorRT, Triton — inside a production-grade system. The implementation plan is a separate document: the [learning roadmap](../plan/00-learning-roadmap.md) (2026-10-07).
 
 **Revision history**
 - **v2** applied three independent reviews: an AI architect, a production engineer and a web fact-check. The main changes were:
@@ -399,6 +399,8 @@ Exact IDs were checked against model cards on 2026-10-04 unless marked *(verify)
   - MUCS 2021 Hi-En: CC BY-SA 4.0, about 90 h train and 5 h test.
   - Common Voice: moved to Mozilla Data Collective, account needed.
   - CS-FLEURS: CC-BY-NC and mostly synthetic, so not used.
+
+- **vLLM on Apple Silicon** (checked 2026-10-07): the vllm-metal plugin runs vLLM on Metal through MLX, so vLLM can be learned on the Mac (learning roadmap v9).
 
 **Still unverified → spike 0:**
 - Triton on Apple Silicon Docker.

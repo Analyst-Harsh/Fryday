@@ -1,5 +1,7 @@
 # Fryday — Implementation Roadmap
 
+> **2026-10-07: the sequencing in this file is superseded by the [learning roadmap](00-learning-roadmap.md).** The phases and their files remain as the north-star scope and deep-detail backlog, and each version in the learning roadmap points back to the phase it draws from.
+
 | | |
 |---|---|
 | **Implements** | [HLD v4](../specs/2026-10-04-fryday-hld-design.md) · [Architecture overview](../specs/2026-10-04-fryday-architecture.md) |
