@@ -23,6 +23,7 @@ flowchart LR
 ## Still don't get (re-ask after 1 week and again after 4 weeks)
 | Added | Question | Re-asked (1 week) | Re-asked (4 weeks) |
 |---|---|---|---|
+| 2026-10-08 | What is a model **contract** (app ↔ model-server API shape, so backends can be swapped), and how is it different from **structured output** (the model's text following a schema)? | due 2026-10-15 | due 2026-11-05 |
 
 ## Entry template
 ```markdown
@@ -37,4 +38,16 @@ flowchart LR
 
 ---
 
-_No entries yet. The first one comes from F, session 1._
+### 2026-10-08: F session 1 (learn): the big picture
+- **Built or watched:** Karpathy, *Intro to Large Language Models*. Walked through one Fryday turn (architecture doc §1 and §4).
+- **Predicted vs actual:** I predicted "model processing" eats most of the ~2 s. More precisely, ASR is the biggest cost on the Mac (1–2 s), and the LLM's time to its first chunk matters most on the GPU. Streaming hides the rest.
+- **Surprised me:**
+  - The app is a **hub**, not a pipeline: models never call each other.
+  - The LLM can be called twice in one turn (once to decide on a tool, once to phrase the reply).
+- **I can now explain:**
+  - An LLM is two files, weights plus a run program, and the hosting layer (MLX, vLLM, Triton) is that run program.
+  - The LLM only *proposes* tool calls. The app validates them and executes them.
+  - Pretraining gives the model knowledge. Fine-tuning gives it behaviour and format.
+  - Streaming overlaps LLM and TTS.
+- **Still don't get:** contract vs structured output (I mixed them up in the quiz; see the table above).
+- **Tomorrow's first step:** F session 2, the 3Blue1Brown neural-network refresher, then *Transformers* and *Attention*.
