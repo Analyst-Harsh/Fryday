@@ -3,14 +3,17 @@ pre-commit:
   commands:
     ruff-format:
       glob: "*.py"
+      exclude: ["spikes/**"]  # throwaway code, mirrors pyproject excludes
       run: uv run ruff format {staged_files}
       stage_fixed: true
     ruff-lint:
       glob: "*.py"
+      exclude: ["spikes/**"]  # throwaway code, mirrors pyproject excludes
       run: uv run ruff check --fix {staged_files}
       stage_fixed: true
     pyright:
       glob: "*.py"
+      exclude: ["spikes/**"]  # throwaway code, mirrors pyproject excludes
       run: uv run pyright {staged_files}
     # Needs gitleaks >= 8.19 on PATH (brew install gitleaks). GUI git clients
     # may not have /opt/homebrew/bin on PATH -- commit from the terminal.

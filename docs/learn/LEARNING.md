@@ -24,6 +24,7 @@ flowchart LR
 | Added | Question | Re-asked (1 week) | Re-asked (4 weeks) |
 |---|---|---|---|
 | 2026-10-08 | What is a model **contract** (app ↔ model-server API shape, so backends can be swapped), and how is it different from **structured output** (the model's text following a schema)? | due 2026-10-15 | due 2026-11-05 |
+| 2026-10-09 | (F2 quiz, skipped; ask at the F checkpoint) What are query, key and value? Why does a low temperature make output predictable? Why does an LLM need attention instead of fixed word embeddings? | due F session 10 | — |
 
 ## Entry template
 ```markdown
@@ -37,6 +38,19 @@ flowchart LR
 ```
 
 ---
+
+### 2026-10-09: F session 2 (learn): neural nets → transformers
+- **Built or watched:** 3Blue1Brown neural nets, *Transformers* and *Attention*. Toy: `spikes/learn/f2_attention.py`, one attention head by hand.
+- **Predicted vs actual:** skipped.
+- **Surprised me:**
+  - "bank" moves toward water or money purely from its neighbours.
+  - The weights come out flat without the learned W_q and W_k.
+- **I can now explain:**
+  - Attention as three steps: score (q·k), normalise (softmax), blend (V).
+  - Temperature sharpens or flattens the next-token distribution.
+  - Past tokens' K and V never change, so they're cached (the KV cache).
+- **Still don't get:** quiz deferred (see the table).
+- **Tomorrow's first step:** F session 3, Karpathy's tokenizer lecture, plus a Hinglish token-count toy.
 
 ### 2026-10-08: F session 1 (learn): the big picture
 - **Built or watched:** Karpathy, *Intro to Large Language Models*. Walked through one Fryday turn (architecture doc §1 and §4).
