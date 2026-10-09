@@ -39,6 +39,19 @@ flowchart LR
 
 ---
 
+### 2026-10-10: F session 3 (learn): tokenisation
+- **Built or watched:** Karpathy, *Let's build the GPT Tokenizer*. Toy: `spikes/learn/f3_tokens.py` on Qwen's real tokenizer.
+- **Predicted vs actual:** I predicted English < Roman Hinglish < Devanagari ✅. The actual counts were 8 / 12 / 30 tokens.
+- **Surprised me:**
+  - Devanagari costs 3.75× English.
+  - Byte-level BPE splits single Devanagari characters across tokens (the `�` pieces).
+- **I can now explain:**
+  - BPE sits between characters and words.
+  - Byte-level BPE covers every language, at a cost for non-English scripts.
+  - More tokens means more latency and more KV-cache memory.
+- **Still don't get:** —
+- **Tomorrow's first step:** F session 4, building a tiny GPT from scratch (part 1/2).
+
 ### 2026-10-09: F session 2 (learn): neural nets → transformers
 - **Built or watched:** 3Blue1Brown neural nets, *Transformers* and *Attention*. Toy: `spikes/learn/f2_attention.py`, one attention head by hand.
 - **Predicted vs actual:** skipped.
