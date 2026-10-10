@@ -193,6 +193,8 @@ Each version adds its own rows as they come up.
 Each version lists what you **learn** (interview topics), what you **build**, the **production** points it adds, and the deep-detail **source** in the old plan.
 
 ### F: Foundations (10 sessions)
+> **Reordered 2026-10-10 (just-in-time learning).** Sessions 1–3 are done. Next comes **7 (hosting)**, then a short checkpoint, then **v0**. Sessions 4–6 (tiny GPT, modern architecture) move to just before **v9**, where attention internals and the KV cache become things you measure. Sessions 8 and 9 (speech, real-time) move to just before **v3** and **v5**. Nothing is cut. The rule from here on: learn depth when the build needs it.
+
 1. **The big picture.** Karpathy, *Intro to LLMs*. Claude walks you through architecture doc §1 and §4, and you draw your six-box diagram.
 2. **Neural nets refresher → transformers.** 3Blue1Brown's neural-network and transformer/attention videos. Covers embeddings, attention, MLP, softmax and residuals.
 3. **Tokenisation.** Karpathy's tokenizer lecture: BPE and byte-level BPE. Toy: measure tokens per word for English vs Roman Hinglish vs Devanagari.
