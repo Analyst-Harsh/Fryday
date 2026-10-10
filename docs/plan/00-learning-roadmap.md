@@ -230,14 +230,14 @@ Each version lists what you **learn** (interview topics), what you **build**, th
   | Session | Status | Contents |
   |---|---|---|
   | 1 | done | `fryday-chat`: config with range checks, the `LLMClient` seam, structlog, history trimming, error handling |
-  | 2 | | **Contract tests**, against a fake OpenAI server in pytest, so they run in CI. They check four things (see below). Then **OpenTelemetry spans** around each LLM call, with exact token counts from `usage` |
+  | 2 | part A done | **Contract tests**, against a fake OpenAI server in pytest, so they run in CI. They check four things (see below). Then **OpenTelemetry spans** around each LLM call, with exact token counts from `usage` |
   | 3 | | **Your sampler** (learner-writes) |
   | 4 | | Quantisation taste: 4-bit vs 8-bit MLX, comparing memory, speed and quality |
 
   The session 2 contract tests check:
   1. The streamed deltas are joined correctly.
   2. Sampling fields, including `top_k` sent through `extra_body`, are in the request body.
-  3. A **mid-stream disconnect** is caught and gives a friendly error, not a crash. The test must find out whether the SDK raises `openai.APIError` or a raw `httpx` error, and fix the `except` if needed.
+  3. A **mid-stream disconnect** is caught and gives a friendly error, not a crash. **Answered:** the SDK wraps it as `openai.APIConnectionError` or `APITimeoutError`, so no fix was needed.
   4. A timeout is handled.
 
   Separately, there is a **local check against the real server** (not run in CI):

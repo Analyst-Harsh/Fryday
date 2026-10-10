@@ -39,6 +39,26 @@ flowchart LR
 
 ---
 
+### 2026-10-10: v0 build 2, part A: contract tests with a fake network
+- **Built or watched:**
+  - `LLMClient(http_client=...)` (dependency injection).
+  - `httpx2.MockTransport` fake server.
+  - 4 contract tests: deltas joined, request body including `top_k`, mid-stream disconnect and stall, timeout before reply.
+  - `conftest.py` isolates Settings from `.env` and `FRYDAY_*` vars.
+- **Predicted vs actual:** I predicted a mid-stream disconnect would raise a **raw httpx error and crash** the CLI. ❌ In fact the SDK wraps it: `RemoteProtocolError` → `openai.APIConnectionError`, and `ReadTimeout` → `APITimeoutError`, with the original kept as `__cause__`. `cli.py`'s `except openai.APIError` was already right.
+- **Surprised me:**
+  - openai 3.x uses **httpx2**, not httpx. Check the library, don't assume.
+  - The test answered in 0.25 s what we'd both guessed wrong.
+- **I can now explain:**
+  - Mocking the SDK vs faking the transport (the real SDK still runs) vs the real server.
+  - Dependency injection.
+  - TDD: write the test for the desired behaviour, run it, fix if red.
+  - `pytest.raises` wrapping one statement.
+  - `autouse` fixtures for test isolation.
+  - Direct vs transitive dependencies.
+- **Still don't get:** —
+- **Next:** v0 build 2, part C: OpenTelemetry spans. Part B (the real-server `top_k` check) is pending.
+
 ### 2026-10-10: v0 walkthrough of build 1 (config, llm, logs, cli, tests)
 - **Built or watched:**
   - Walked through every v0 file slowly.
