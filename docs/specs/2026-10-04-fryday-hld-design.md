@@ -49,7 +49,7 @@ Fryday is a Hinglish tap-to-talk voice assistant whose real purpose is **learnin
 | ASR test data | Public datasets (speaker-disjoint test splits) plus one small **entity test set in the owner's own voice**, used for testing only. No volunteer speakers |
 | Spend confirmation | Read back the stored order + amount shown as text in the UI + spoken confirm phrase **and** UI tap, both bound to the same approval |
 | Spend delivery | At-most-once with reconciliation. The mock can either honour or ignore idempotency keys, so both cases are exercised |
-| Tracing | Langfuse Cloud Hobby tier (50k units/month, 30-day retention; region chosen at signup and fixed), PII scrubbed before export |
+| Tracing | Langfuse Cloud Hobby tier (50k units/month, 30-day retention; EU region, fixed at signup), via the **Langfuse Python SDK v4** (built on OpenTelemetry). Calls are confined to `app/src/fryday/tracing.py`; the rest of the app uses its helpers (2026-10-10). PII is scrubbed before export. **Dev-only exception:** with `FRYDAY_TRACE_CONTENT=true`, prompt and reply text is sent unmasked, for test phrases only. Masking (`mask_otel_spans`) is required before any non-dev use |
 | Router to outside model | Phase 2. Hosted models used offline only, as experiment baselines |
 
 ## 1. Components

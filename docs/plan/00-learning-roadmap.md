@@ -230,7 +230,7 @@ Each version lists what you **learn** (interview topics), what you **build**, th
   | Session | Status | Contents |
   |---|---|---|
   | 1 | done | `fryday-chat`: config with range checks, the `LLMClient` seam, structlog, history trimming, error handling |
-  | 2 | part A done | **Contract tests**, against a fake OpenAI server in pytest, so they run in CI. They check four things (see below). Then **OpenTelemetry spans** around each LLM call, with exact token counts from `usage` |
+  | 2 | done (A + C) | **Contract tests**, against a fake OpenAI server in pytest, so they run in CI. They check four things (see below). Then **OpenTelemetry spans** around each LLM call, with exact token counts from `usage` |
   | 3 | | **Your sampler** (learner-writes) |
   | 4 | | Quantisation taste: 4-bit vs 8-bit MLX, comparing memory, speed and quality |
 
@@ -239,6 +239,11 @@ Each version lists what you **learn** (interview topics), what you **build**, th
   2. Sampling fields, including `top_k` sent through `extra_body`, are in the request body.
   3. A **mid-stream disconnect** is caught and gives a friendly error, not a crash. **Answered:** the SDK wraps it as `openai.APIConnectionError` or `APITimeoutError`, so no fix was needed.
   4. A timeout is handled.
+
+  Part C was done as **Langfuse tracing**, not raw OTel spans (decided 2026-10-10):
+  - `tracing.py` helpers: `trace_root`, `span`, `generation`, `record`, `content`;
+  - one trace per turn, sessions, TTFT, exact token usage, and `trace_id` on log lines.
+  The live check in the Langfuse UI is deferred until tracing is first needed.
 
   Separately, there is a **local check against the real server** (not run in CI):
   - a request with `top_k: -1` should get an HTTP 400;

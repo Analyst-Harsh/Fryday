@@ -12,6 +12,12 @@ Every result goes here, **including negative ones** (roadmap working principles)
 - **Decision:** what changes because of this (HLD/roadmap update, next step).
 ```
 
+## 2026-10-10: Does mlx_lm.server honour stream_options.include_usage? (v0)
+- **Question:** can we get exact token counts from a streamed reply?
+- **Setup:** `mlx_lm.server`, Qwen3-4B 4-bit (MLX revision `50d4277`), openai SDK, `stream=True`, `stream_options={"include_usage": True}`, n=1.
+- **Result:** **accepted.** The final chunk has `choices: []` and `usage: prompt_tokens=15, completion_tokens=7, total_tokens=22`.
+- **Decision:** `llm.py` always requests usage and records it on the Langfuse generation. No fallback setting is needed.
+
 ## 2026-10-10: Repetition loops vs sampling config (v0, inconclusive)
 - **Question:** the first live `fryday-chat` run produced one runaway loop: one line repeated until `max_tokens`, giving 484 chunks. Does the sampling config cause it?
 - **Setup:**

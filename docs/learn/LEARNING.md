@@ -39,6 +39,29 @@ flowchart LR
 
 ---
 
+### 2026-10-10: v0 build 2, part C: tracing with Langfuse
+- **Built or watched:**
+  - Replaced the hand-written OTel spans with the Langfuse SDK, kept behind reusable helpers in `tracing.py` (the only langfuse import).
+  - One trace per turn, a session per chat run, an `llm.stream` generation with TTFT, exact usage and opt-in content.
+  - `trace_id` on log lines.
+- **Predicted vs actual:**
+  - Early stop: I predicted ERROR. Actual: UNSET / `stopped_early`, because `GeneratorExit` isn't a failure.
+  - Disabled-client warning: our first guess at the cause was wrong; we verified before fixing.
+- **Surprised me:**
+  - An infinite recursion: the log processor asked Langfuse for the trace id, and that lookup itself logs.
+  - Tests passed alone but failed together, because the root logger leaked between tests.
+  - Langfuse warns about missing keys even when tracing is off.
+- **I can now explain:**
+  - Logs, traces and metrics, and how each is shipped in production (agent / OTLP push / Prometheus scrape).
+  - Auto vs manual instrumentation.
+  - Vendor code at the seams.
+  - The `content()` privacy gate.
+  - `env_prefix` vs `validation_alias`.
+  - Root dev deps vs app runtime deps.
+  - `Generator` vs `Iterator` return types.
+- **Still don't get:** —
+- **Next:** v0 build 3, my sampler (learner-writes). The live Langfuse check is deferred until needed.
+
 ### 2026-10-10: v0 build 2, part A: contract tests with a fake network
 - **Built or watched:**
   - `LLMClient(http_client=...)` (dependency injection).
