@@ -39,6 +39,33 @@ flowchart LR
 
 ---
 
+### 2026-10-10: F session 7 (learn): what model hosting means
+- **Built or watched:**
+  - Hosting layers: weights, runtime, server, contract, app.
+  - Weight formats.
+  - Memory math (params × bytes).
+  - Ran Qwen3-4B 4-bit with `mlx_lm.generate` and with `mlx_lm.server` plus `f7_probe.py`.
+  - Also: a PyTorch primer (`f4_pytorch_primer.py`), plus walkthroughs of (B, T, C), nn.Linear and one attention head by hand.
+- **Predicted vs actual:**
+
+  | | Predicted | Actual |
+  |---|---|---|
+  | TTFT | 1–2 s | 0.53 s cold, 0.05–0.11 s warm |
+  | Speed | 10 tok/s | about 42–55 tok/s |
+  | RAM | about 4 GB | about 2.4–2.6 GB, which matches 4B × 0.5 bytes plus scales |
+
+- **Surprised me:**
+  - Speed was 4–5× faster than I guessed.
+  - The prompt cache made a repeated prompt's TTFT about 10× smaller.
+  - The model claimed it had set a reminder when it had no tool.
+- **I can now explain:**
+  - What each hosting layer does.
+  - Why the contract lets the Mac (MLX) and the GPU (vLLM) swap.
+  - Why 4-bit is about 2 GB.
+  - Why warm-up exists.
+- **Still don't get:** —
+- **Next:** short F checkpoint, then v0 (LLM hosting I: build).
+
 ### 2026-10-10: F session 3 (learn): tokenisation
 - **Built or watched:** Karpathy, *Let's build the GPT Tokenizer*. Toy: `spikes/learn/f3_tokens.py` on Qwen's real tokenizer.
 - **Predicted vs actual:** I predicted English < Roman Hinglish < Devanagari ✅. The actual counts were 8 / 12 / 30 tokens.
