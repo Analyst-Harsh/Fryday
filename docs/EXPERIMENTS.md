@@ -12,6 +12,23 @@ Every result goes here, **including negative ones** (roadmap working principles)
 - **Decision:** what changes because of this (HLD/roadmap update, next step).
 ```
 
+## 2026-10-10: Repetition loops vs sampling config (v0, inconclusive)
+- **Question:** the first live `fryday-chat` run produced one runaway loop: one line repeated until `max_tokens`, giving 484 chunks. Does the sampling config cause it?
+- **Setup:**
+  - Model: Qwen3-4B 4-bit, MLX revision `50d4277`, served by `mlx_lm.server`.
+  - Context: a fixed 2-turn Hinglish conversation.
+  - Sampling: temperature 0.7, `max_tokens` 300, 6 runs per config.
+  - Configs compared: our original (top_p 0.9, no top_k), Qwen's recommended (top_p 0.8, top_k 20), and recommended plus presence_penalty 1.0.
+  - Script: `spikes/learn/v0_repetition.py`.
+- **Result:** **0/6 loops under every config.** Reply lengths were 30–69 tokens. The live loop came after an unusual first reply, so it is rare and depends on context.
+- **Decision:**
+  - Adopt Qwen's published defaults (top_p 0.8, top_k 20). This follows the vendor's documentation; the measurement did not show they are better.
+  - Keep the `max_tokens` cap as the hard guard.
+  - Don't add presence_penalty without evidence.
+  - Follow-ups:
+    - Lower the cap for voice replies (v5).
+    - Measure loop rate at scale in the v7a eval, which needs n ≫ 6.
+
 ## 2026-10-10: Qwen3-4B 4-bit on the M5 via MLX: speed and memory (F7, feeds S0-2 and S0-3)
 - **Question:** what time to first token, decode speed and memory do we get on the Mac, and does `mlx_lm.server` stream?
 - **Setup:**

@@ -39,6 +39,26 @@ flowchart LR
 
 ---
 
+### 2026-10-10: v0 learn 1 + build 1: logits, decoding, first Fryday chat
+- **Built or watched:**
+  - `v0_logits.py`: real Qwen logits, shape (1, 38, 151936).
+  - Temperature, top-k and top-p on real numbers.
+  - Built `fryday-chat`: config, the `LLMClient` seam, JSON logs, history trimming, error handling.
+- **Predicted vs actual:** —
+- **Surprised me:**
+  - At temperature 1.5, top-p 0.9 keeps **894** tokens (vs 4 at 0.3).
+  - The first live chat hit a repetition loop (484 chunks), and I couldn't reproduce it in 18 runs.
+  - The model mixes up "mera" (whose name?): it answered "Mera naam Fryday".
+- **I can now explain:**
+  - Logits vs probabilities (softmax only cares about differences).
+  - Greedy, temperature, top-k, top-p, beam search, logprobs.
+  - Why temperature 0 can still vary (near-ties plus floating point).
+  - Low temperature for tool calls.
+  - Why `max_retries=0` for streaming.
+  - Why history keeps the system prompt first (prefix cache).
+- **Still don't get:** —
+- **Next:** v0 build 2, a contract test against a stub server plus OpenTelemetry spans.
+
 ### 2026-10-10: F session 7 (learn): what model hosting means
 - **Built or watched:**
   - Hosting layers: weights, runtime, server, contract, app.
