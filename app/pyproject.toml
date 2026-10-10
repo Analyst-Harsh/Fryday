@@ -5,7 +5,9 @@ description = "Fryday app service (FastAPI gateway, agent, memory, backends)"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "httpx2>=2.13.1",
+    "langfuse>=4.17",
     "openai>=3.28.0",
+    "opentelemetry-api>=1.45.1",
     "pydantic-settings>=2.15.0",
     "structlog>=26.1.0",
 ]

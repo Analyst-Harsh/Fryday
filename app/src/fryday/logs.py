@@ -15,7 +15,16 @@ import logging
 import sys
 
 import structlog
-from structlog.typing import Processor
+from structlog.typing import EventDict, Processor, WrappedLogger
+
+from fryday.tracing import current_trace_id
+
+
+def add_trace_id(_logger: WrappedLogger, _method: str, event_dict: EventDict) -> EventDict:
+    """Stamp the current trace's id, so a log line links to its trace in Langfuse."""
+    if trace_id := current_trace_id():
+        event_dict["trace_id"] = trace_id
+    return event_dict
 
 
 def setup_logging(as_json: bool | None = None, level: int = logging.INFO) -> None:
@@ -25,6 +34,7 @@ def setup_logging(as_json: bool | None = None, level: int = logging.INFO) -> Non
     # Steps every log line passes through, ours and the libraries'.
     shared: list[Processor] = [
         structlog.contextvars.merge_contextvars,  # adds bound fields like turn_id
+        add_trace_id,
         structlog.stdlib.add_log_level,
         structlog.stdlib.add_logger_name,
         structlog.processors.TimeStamper(fmt="iso", utc=True),
