@@ -21,8 +21,9 @@ class LLMClient:
             base_url=settings.llm_base_url,
             api_key=settings.llm_api_key.get_secret_value(),
             timeout=settings.llm_timeout_s,
-            # No automatic retries: re-sending after half a reply has streamed
-            # would duplicate text. The caller decides what to do on failure.
+            # No hidden retries (the SDK default is 2, with backoff). A voice turn
+            # can't wait out several timeouts, the local server won't recover in
+            # milliseconds, and the caller (turn manager, v5) decides what to do.
             max_retries=0,
         )
 
