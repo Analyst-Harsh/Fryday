@@ -39,6 +39,28 @@ flowchart LR
 
 ---
 
+### 2026-10-10: v0 walkthrough of build 1 (config, llm, logs, cli, tests)
+- **Built or watched:**
+  - Walked through every v0 file slowly.
+  - Switched logging to structlog (my call).
+  - Added config range checks (fail fast at startup).
+  - Corrected the `max_retries` rationale.
+- **Predicted vs actual:** I thought `llm.stream()` itself raises when the server is down. In fact a generator doesn't run until it's iterated, so the error appears in the `for` loop.
+- **Surprised me:**
+  - The `openai` SDK is just an HTTP client. `top_k` goes through `extra_body` to the *server's* sampler, never to the model.
+  - "Prompt processing 59/60, 60/60" is prefill: the bulk of the prompt, then the last token on its own, which yields the first reply token.
+  - We may not catch a mid-stream disconnect (it could be a raw httpx error). Build 2 will test it.
+- **I can now explain:**
+  - Config priority: code > env var > `.env` > default. `SecretStr`. Fail fast.
+  - The seam and connection reuse.
+  - Generators being lazy.
+  - The structlog processor pipeline, `foreign_pre_chain` and contextvars (safe for concurrent turns in v5).
+  - `perf_counter` (durations) vs `time.time` (timestamps).
+  - `trim_history` edge cases.
+  - `parametrize`, `monkeypatch`, `capsys`, test isolation.
+- **Still don't get:** —
+- **Next:** v0 build 2, contract tests with a fake OpenAI server, then OTel spans.
+
 ### 2026-10-10: v0 learn 1 + build 1: logits, decoding, first Fryday chat
 - **Built or watched:**
   - `v0_logits.py`: real Qwen logits, shape (1, 38, 151936).
