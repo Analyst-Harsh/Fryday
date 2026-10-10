@@ -15,11 +15,11 @@ import urllib.request
 BODY = {
     "model": "mlx-community/Qwen3-4B-Instruct-2507-4bit",
     "messages": [
-        {"role": "system", "content": "You are Fryday. Reply in short, friendly Hinglish."},
-        {"role": "user", "content": "Kal subah 7 baje ka reminder laga do."},
+        {"role": "system", "content": "You are Fryday. Reply in friendly Hinglish."},
+        {"role": "user", "content": "Mujhe 5 tips do ki subah jaldi kaise uthein."},
     ],
     "stream": True,  # tokens arrive one by one as Server-Sent Events (SSE)
-    "max_tokens": 100,
+    "max_tokens": 250,
 }
 
 for run in (1, 2, 3):  # run 1 includes warm-up; runs 2-3 are steady state
@@ -28,6 +28,7 @@ for run in (1, 2, 3):  # run 1 includes warm-up; runs 2-3 are steady state
         data=json.dumps(BODY).encode(),
         headers={"Content-Type": "application/json"},
     )
+    print(f"\n--- run {run} ---")
     t0 = time.perf_counter()
     ttft, n_tokens, text = None, 0, ""
     with urllib.request.urlopen(req, timeout=60) as resp:
@@ -40,7 +41,7 @@ for run in (1, 2, 3):  # run 1 includes warm-up; runs 2-3 are steady state
                 ttft = ttft or time.perf_counter() - t0
                 n_tokens += 1
                 text += delta
+                print(delta, end="", flush=True)  # show each token the moment it arrives
     total = time.perf_counter() - t0
     tps = (n_tokens - 1) / (total - ttft) if ttft and n_tokens > 1 else 0
-    print(f"run {run}: TTFT={ttft:.2f}s  tokens={n_tokens}  decode={tps:.1f} tok/s  total={total:.2f}s")
-print("reply:", text)
+    print(f"\n[TTFT={ttft:.2f}s  tokens={n_tokens}  decode={tps:.1f} tok/s  total={total:.2f}s]")
