@@ -51,6 +51,7 @@ name = "fryday-app"
 version = "0.0.1"
 source = { editable = "app" }
 dependencies = [
+    { name = "httpx2" },
     { name = "openai" },
     { name = "pydantic-settings" },
     { name = "structlog" },
@@ -58,6 +59,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "httpx2", specifier = ">=2.13.1" },
     { name = "openai", specifier = ">=3.28.0" },
     { name = "pydantic-settings", specifier = ">=2.15.0" },
     { name = "structlog", specifier = ">=26.1.0" },

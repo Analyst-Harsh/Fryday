@@ -6,6 +6,7 @@ mlx_lm.server on the Mac today, vLLM on the GPU box later (v13).
 
 from collections.abc import Iterator
 
+import httpx2
 from openai import OpenAI
 from openai.types.chat import ChatCompletionMessageParam
 
@@ -15,7 +16,8 @@ Message = ChatCompletionMessageParam
 
 
 class LLMClient:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, http_client: httpx2.Client | None = None) -> None:
+        # http_client: tests inject a fake network here; None = the SDK's normal client.
         self._settings = settings
         self._client = OpenAI(
             base_url=settings.llm_base_url,
@@ -25,6 +27,7 @@ class LLMClient:
             # can't wait out several timeouts, the local server won't recover in
             # milliseconds, and the caller (turn manager, v5) decides what to do.
             max_retries=0,
+            http_client=http_client,
         )
 
     def stream(self, messages: list[Message]) -> Iterator[str]:
