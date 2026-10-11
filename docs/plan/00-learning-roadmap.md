@@ -249,6 +249,13 @@ Each version lists what you **learn** (interview topics), what you **build**, th
   - a request with `top_k: -1` should get an HTTP 400;
   - with `top_k: 1` and temperature 1.5, five replies should be identical.
 
+  **Closed 2026-10-11, with these items skipped by the owner's choice** (still open; pick them up before interviews):
+  - the real-server `top_k` check above;
+  - the live Langfuse UI check;
+  - build 3, the sampler;
+  - the `docs/learn/v0.md` explain-it-back note;
+  - the v0 interview session.
+
 ### v1: Tool calling
 - **Learn:**
   - the function-calling loop;
