@@ -231,8 +231,8 @@ Each version lists what you **learn** (interview topics), what you **build**, th
   |---|---|---|
   | 1 | done | `fryday-chat`: config with range checks, the `LLMClient` seam, structlog, history trimming, error handling |
   | 2 | done (A + C) | **Contract tests**, against a fake OpenAI server in pytest, so they run in CI. They check four things (see below). Then **OpenTelemetry spans** around each LLM call, with exact token counts from `usage` |
-  | 3 | | **Your sampler** (learner-writes) |
-  | 4 | | Quantisation taste: 4-bit vs 8-bit MLX, comparing memory, speed and quality |
+  | 3 | skipped by choice (2026-10-10) | **Your sampler** (learner-writes). Still available before interviews |
+  | 4 | in progress | Quantisation taste: 4-bit vs 8-bit MLX, comparing memory, speed and quality |
 
   The session 2 contract tests check:
   1. The streamed deltas are joined correctly.

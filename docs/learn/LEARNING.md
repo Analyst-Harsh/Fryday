@@ -39,6 +39,34 @@ flowchart LR
 
 ---
 
+### 2026-10-11: v0 build 4, part 1: precision and quantisation (in progress)
+- **Built or watched:**
+  - Hugging Face model repo anatomy: config, safetensors, index, tokenizer files, chat template, generation config.
+  - Qwen3-4B architecture: about 101 M parameters per layer × 36 layers, plus 0.39 B for the tied embedding, ≈ 4.02 B.
+  - Precision formats: fp32, bf16, fp16, int8, int4.
+  - Group quantisation (one ruler per 64 weights); "4-bit" really means 4.5 bits per weight.
+  - `spikes/learn/v0_quant_toy.py`: quantised layer-0 `q_proj` of the **original** bf16 Qwen by hand.
+- **Results:**
+  - Error vs bits (group 64): 8-bit 0.57%, 6-bit 2.29%, 4-bit 9.64%, 3-bit 20.7%, 2-bit 48.5%.
+  - Group size at 4-bit: 32 → 8.2%, 64 → 9.6%, 128 → 10.9%, whole row → 16.0%.
+  - Our formula ≈ `mx.quantize` (9.64% vs 9.82%). The difference is **not** bf16 scales (they are float32 here). MLX anchors the ruler on the edge furthest from 0, then shrinks the gap so that 0 lands exactly on a mark (true in 100% of groups). That clips the other edge, giving a max difference of 0.05.
+  - Outlier demo (fixed): a group with one spike (max/median 19×) vs a typical group (3.9×). The other 63 weights: 25.7% vs 9.9% error, using 7 vs 14 of the 16 marks.
+  - Adding a bit beats shrinking groups: 4-bit g32 (5.00 bits/weight) 8.2% vs 5-bit g128 (5.25 bits/weight) 5.3%.
+  - MLX defaults: affine, 4 bits, group 64. The mlx-community 4/6/8-bit models are all group 64. Other modes: mxfp4 (g32), nvfp4 (g16), mxfp8 (g32), with no bias.
+- **Surprised me:**
+  - The outlier demo first failed. It picked the widest-range group, whose weights were all large (median 10× typical), so its relative error looked normal. The fix is to select by max/median.
+  - "Weights sharing a mark" was meaningless: 64 weights on 16 marks always gives ≥ 48.
+  - The handoff note's bf16 guess for the MLX difference was wrong. Checking it found the real cause.
+  - The matrix's global min and max sit in the same group of 64, so outliers cluster in columns.
+  - Layer anatomy: attention is only ~26% of a layer, and the MLP ~74%. GQA makes K and V 4× smaller than Q.
+- **I can now explain:**
+  - Why the Instruct model and not the Thinking one (latency).
+  - Why Hinglish is weak (incidental in pretraining).
+  - Decode is memory-bandwidth-bound: every token streams all weights from unified memory to the GPU cores. The ceiling is tok/s ≈ 153 GB/s ÷ model bytes.
+  - mlx-community vs the original (format vs provenance).
+- **Still don't get:** —
+- **Next:** step 3, `mlx_lm.convert` the original to 8, 6 and 4 bits (group 64) and diff our 4-bit against mlx-community's; then step 4, a full-model check of memory, TTFT, tok/s and agreement.
+
 ### 2026-10-10: v0 build 2, part C: tracing with Langfuse
 - **Built or watched:**
   - Replaced the hand-written OTel spans with the Langfuse SDK, kept behind reusable helpers in `tracing.py` (the only langfuse import).
