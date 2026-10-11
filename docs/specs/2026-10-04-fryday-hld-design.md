@@ -96,8 +96,8 @@ Fryday is a Hinglish tap-to-talk voice assistant whose real purpose is **learnin
 1. Tap to start: the browser streams PCM16 16 kHz binary frames, each tagged with `turn_id` and `seq`.
 2. Tap to stop ends the utterance.
 3. Utterance → `asr` → normaliser (in). Empty, low-confidence or no-speech output is dropped, because Whisper hallucinates on silence.
-4. Transcript → `embed` → pgvector top-k memories.
-5. LangGraph → LLM (streaming).
+4. Transcript → `embed` → pgvector top-k memories. *(Added in v2; the first voice build, v5, skips this hop.)*
+5. LangGraph → LLM (streaming). *(In v5 this is a plain LLM stream behind the `reply` seam; the agent arrives in v1, behind the same seam.)*
    - **Tool call:** Pydantic-validate → filler line → MCP.
    - **Invalid call:** one repair attempt using the validation error, then a polite refusal.
 6. Reply tokens → chunks (a short first chunk of ~6 words, then sentences) → normaliser (out) → `tts` → audio emitted **in order** with `turn_id`/`chunk_seq`. The queue is bounded, so backpressure pauses TTS.
@@ -353,6 +353,8 @@ Exact IDs were checked against model cards on 2026-10-04 unless marked *(verify)
      - Nsight counters.
      - 24 GB fit.
    - **Deferred with real Swiggy:** Builders Club access, and whether real idempotency keys are honoured.
+> **Order changed 2026-10-11:** milestone 2 (voice) is built before milestone 1 (agent and memory). See the learning roadmap §1. The design is unchanged.
+
 1. **Text-only agent on the Mac:** non-spend tools, the mock grocery server with fault modes, approvals plus reconciler, memory, LLM eval harness.
 2. **Voice on the Mac:** ASR + TTS + WebSocket client, end to end.
 3. **LLM LoRA fine-tune** (sprint 1) + quantisation study.

@@ -58,7 +58,7 @@ flowchart LR
   - Divergence vs degradation.
   - Verifying a third-party conversion by rebuilding it from the official source.
 - **Still don't get:** —
-- **Next:** v0 close. Open items: the Part B real-server `top_k` check and the live Langfuse check, then the v0 PR. Build 3 (sampler) remains optional.
+- **Next:** v0 closed (PR #5; skipped items are listed in the roadmap). The plan was re-ordered to voice first. **Tomorrow's first step: F8, sound and speech overview** (HF Audio Course ch.1), then the `f8_audio.py` toy with your own voice.
 
 ### 2026-10-11: v0 build 4, part 1: precision and quantisation
 - **Built or watched:**
