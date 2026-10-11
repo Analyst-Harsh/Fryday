@@ -225,6 +225,36 @@ Each version lists what you **learn** (interview topics), what you **build**, th
   - **your own sampler** (~50 lines) over raw logits from `mlx_lm`, compared against the server's output.
 - **Production:** lay the baseline from §2: config, logging, OTel console spans, timeouts, and a contract test against a stub OpenAI server.
 - **Source:** old phases 2 and 3.
+- **Build sessions (as run):**
+
+  | Session | Status | Contents |
+  |---|---|---|
+  | 1 | done | `fryday-chat`: config with range checks, the `LLMClient` seam, structlog, history trimming, error handling |
+  | 2 | done (A + C) | **Contract tests**, against a fake OpenAI server in pytest, so they run in CI. They check four things (see below). Then **OpenTelemetry spans** around each LLM call, with exact token counts from `usage` |
+  | 3 | skipped by choice (2026-10-10) | **Your sampler** (learner-writes). Still available before interviews |
+  | 4 | done (2026-10-11) | Quantisation taste: 4-bit vs 8-bit MLX, comparing memory, speed and quality |
+
+  The session 2 contract tests check:
+  1. The streamed deltas are joined correctly.
+  2. Sampling fields, including `top_k` sent through `extra_body`, are in the request body.
+  3. A **mid-stream disconnect** is caught and gives a friendly error, not a crash. **Answered:** the SDK wraps it as `openai.APIConnectionError` or `APITimeoutError`, so no fix was needed.
+  4. A timeout is handled.
+
+  Part C was done as **Langfuse tracing**, not raw OTel spans (decided 2026-10-10):
+  - `tracing.py` helpers: `trace_root`, `span`, `generation`, `record`, `content`;
+  - one trace per turn, sessions, TTFT, exact token usage, and `trace_id` on log lines.
+  The live check in the Langfuse UI is deferred until tracing is first needed.
+
+  Separately, there is a **local check against the real server** (not run in CI):
+  - a request with `top_k: -1` should get an HTTP 400;
+  - with `top_k: 1` and temperature 1.5, five replies should be identical.
+
+  **Closed 2026-10-11, with these items skipped by the owner's choice** (still open; pick them up before interviews):
+  - the real-server `top_k` check above;
+  - the live Langfuse UI check;
+  - build 3, the sampler;
+  - the `docs/learn/v0.md` explain-it-back note;
+  - the v0 interview session.
 
 ### v1: Tool calling
 - **Learn:**

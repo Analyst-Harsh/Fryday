@@ -39,6 +39,140 @@ flowchart LR
 
 ---
 
+### 2026-10-11: v0 build 4, part 2: quantising the real model and measuring it
+- **Built:**
+  - `mlx_lm.convert` of the original bf16 to 8, 6 and 4 bits (4–6 s each). Our 4-bit is bit-identical to mlx-community's (904/904 tensors).
+  - `spikes/learn/v0_quant.py`: memory, TTFT, decode speed, exact match and teacher-forced agreement. The results are in `EXPERIMENTS.md`.
+- **Results:**
+  - Decode: 15.9 → 29.4 → 36.9 → 53.7 tok/s, 79–84% of the bytes ceiling for every variant.
+  - TTFT: 206 → 133 ms.
+  - Teacher-forced agreement: 98.5% (bf16 noise floor) / 97.3% / 96.0% / 77.6%.
+- **Predicted vs actual:** Claude guessed 4-bit agreement would be 90%+. It was **77.6%**. There is a real step between 6 and 4 bits.
+- **Surprised me:**
+  - The 4-bit replies read fine by eye even though 0/8 matched bf16 exactly.
+  - bf16 against itself is only 98.5%: a batched pass and incremental decoding round differently.
+  - Converting took seconds; it's cheap work.
+- **I can now explain:**
+  - Why fewer bytes means faster decode: the GPU waits on the memory pipe about 95% of the time, and un-quantising is nearly free.
+  - Why TTFT improves less: prefill shares one weight read across about 40 tokens, which is the same idea as batching.
+  - Divergence vs degradation.
+  - Verifying a third-party conversion by rebuilding it from the official source.
+- **Still don't get:** —
+- **Next:** v0 close. Open items: the Part B real-server `top_k` check and the live Langfuse check, then the v0 PR. Build 3 (sampler) remains optional.
+
+### 2026-10-11: v0 build 4, part 1: precision and quantisation
+- **Built or watched:**
+  - Hugging Face model repo anatomy: config, safetensors, index, tokenizer files, chat template, generation config.
+  - Qwen3-4B architecture: about 101 M parameters per layer × 36 layers, plus 0.39 B for the tied embedding, ≈ 4.02 B.
+  - Precision formats: fp32, bf16, fp16, int8, int4.
+  - Group quantisation (one ruler per 64 weights); "4-bit" really means 4.5 bits per weight.
+  - `spikes/learn/v0_quant_toy.py`: quantised layer-0 `q_proj` of the **original** bf16 Qwen by hand.
+- **Results:**
+  - Error vs bits (group 64): 8-bit 0.57%, 6-bit 2.29%, 4-bit 9.64%, 3-bit 20.7%, 2-bit 48.5%.
+  - Group size at 4-bit: 32 → 8.2%, 64 → 9.6%, 128 → 10.9%, whole row → 16.0%.
+  - Our formula ≈ `mx.quantize` (9.64% vs 9.82%). The difference is **not** bf16 scales (they are float32 here). MLX anchors the ruler on the edge furthest from 0, then shrinks the gap so that 0 lands exactly on a mark (true in 100% of groups). That clips the other edge, giving a max difference of 0.05.
+  - Outlier demo (fixed): a group with one spike (max/median 19×) vs a typical group (3.9×). The other 63 weights: 25.7% vs 9.9% error, using 7 vs 14 of the 16 marks.
+  - Adding a bit beats shrinking groups: 4-bit g32 (5.00 bits/weight) 8.2% vs 5-bit g128 (5.25 bits/weight) 5.3%.
+  - MLX defaults: affine, 4 bits, group 64. The mlx-community 4/6/8-bit models are all group 64. Other modes: mxfp4 (g32), nvfp4 (g16), mxfp8 (g32), with no bias.
+- **Surprised me:**
+  - The outlier demo first failed. It picked the widest-range group, whose weights were all large (median 10× typical), so its relative error looked normal. The fix is to select by max/median.
+  - "Weights sharing a mark" was meaningless: 64 weights on 16 marks always gives ≥ 48.
+  - The handoff note's bf16 guess for the MLX difference was wrong. Checking it found the real cause.
+  - The matrix's global min and max sit in the same group of 64, so outliers cluster in columns.
+  - Layer anatomy: attention is only ~26% of a layer, and the MLP ~74%. GQA makes K and V 4× smaller than Q.
+- **I can now explain:**
+  - Why the Instruct model and not the Thinking one (latency).
+  - Why Hinglish is weak (incidental in pretraining).
+  - Decode is memory-bandwidth-bound: every token streams all weights from unified memory to the GPU cores. The ceiling is tok/s ≈ 153 GB/s ÷ model bytes.
+  - mlx-community vs the original (format vs provenance).
+- **Still don't get:** —
+- **Next:** step 3, `mlx_lm.convert` the original to 8, 6 and 4 bits (group 64) and diff our 4-bit against mlx-community's; then step 4, a full-model check of memory, TTFT, tok/s and agreement.
+
+### 2026-10-10: v0 build 2, part C: tracing with Langfuse
+- **Built or watched:**
+  - Replaced the hand-written OTel spans with the Langfuse SDK, kept behind reusable helpers in `tracing.py` (the only langfuse import).
+  - One trace per turn, a session per chat run, an `llm.stream` generation with TTFT, exact usage and opt-in content.
+  - `trace_id` on log lines.
+- **Predicted vs actual:**
+  - Early stop: I predicted ERROR. Actual: UNSET / `stopped_early`, because `GeneratorExit` isn't a failure.
+  - Disabled-client warning: our first guess at the cause was wrong; we verified before fixing.
+- **Surprised me:**
+  - An infinite recursion: the log processor asked Langfuse for the trace id, and that lookup itself logs.
+  - Tests passed alone but failed together, because the root logger leaked between tests.
+  - Langfuse warns about missing keys even when tracing is off.
+- **I can now explain:**
+  - Logs, traces and metrics, and how each is shipped in production (agent / OTLP push / Prometheus scrape).
+  - Auto vs manual instrumentation.
+  - Vendor code at the seams.
+  - The `content()` privacy gate.
+  - `env_prefix` vs `validation_alias`.
+  - Root dev deps vs app runtime deps.
+  - `Generator` vs `Iterator` return types.
+- **Still don't get:** —
+- **Next:** v0 build 3, my sampler (learner-writes). The live Langfuse check is deferred until needed.
+
+### 2026-10-10: v0 build 2, part A: contract tests with a fake network
+- **Built or watched:**
+  - `LLMClient(http_client=...)` (dependency injection).
+  - `httpx2.MockTransport` fake server.
+  - 4 contract tests: deltas joined, request body including `top_k`, mid-stream disconnect and stall, timeout before reply.
+  - `conftest.py` isolates Settings from `.env` and `FRYDAY_*` vars.
+- **Predicted vs actual:** I predicted a mid-stream disconnect would raise a **raw httpx error and crash** the CLI. ❌ In fact the SDK wraps it: `RemoteProtocolError` → `openai.APIConnectionError`, and `ReadTimeout` → `APITimeoutError`, with the original kept as `__cause__`. `cli.py`'s `except openai.APIError` was already right.
+- **Surprised me:**
+  - openai 3.x uses **httpx2**, not httpx. Check the library, don't assume.
+  - The test answered in 0.25 s what we'd both guessed wrong.
+- **I can now explain:**
+  - Mocking the SDK vs faking the transport (the real SDK still runs) vs the real server.
+  - Dependency injection.
+  - TDD: write the test for the desired behaviour, run it, fix if red.
+  - `pytest.raises` wrapping one statement.
+  - `autouse` fixtures for test isolation.
+  - Direct vs transitive dependencies.
+- **Still don't get:** —
+- **Next:** v0 build 2, part C: OpenTelemetry spans. Part B (the real-server `top_k` check) is pending.
+
+### 2026-10-10: v0 walkthrough of build 1 (config, llm, logs, cli, tests)
+- **Built or watched:**
+  - Walked through every v0 file slowly.
+  - Switched logging to structlog (my call).
+  - Added config range checks (fail fast at startup).
+  - Corrected the `max_retries` rationale.
+- **Predicted vs actual:** I thought `llm.stream()` itself raises when the server is down. In fact a generator doesn't run until it's iterated, so the error appears in the `for` loop.
+- **Surprised me:**
+  - The `openai` SDK is just an HTTP client. `top_k` goes through `extra_body` to the *server's* sampler, never to the model.
+  - "Prompt processing 59/60, 60/60" is prefill: the bulk of the prompt, then the last token on its own, which yields the first reply token.
+  - We may not catch a mid-stream disconnect (it could be a raw httpx error). Build 2 will test it.
+- **I can now explain:**
+  - Config priority: code > env var > `.env` > default. `SecretStr`. Fail fast.
+  - The seam and connection reuse.
+  - Generators being lazy.
+  - The structlog processor pipeline, `foreign_pre_chain` and contextvars (safe for concurrent turns in v5).
+  - `perf_counter` (durations) vs `time.time` (timestamps).
+  - `trim_history` edge cases.
+  - `parametrize`, `monkeypatch`, `capsys`, test isolation.
+- **Still don't get:** —
+- **Next:** v0 build 2, contract tests with a fake OpenAI server, then OTel spans.
+
+### 2026-10-10: v0 learn 1 + build 1: logits, decoding, first Fryday chat
+- **Built or watched:**
+  - `v0_logits.py`: real Qwen logits, shape (1, 38, 151936).
+  - Temperature, top-k and top-p on real numbers.
+  - Built `fryday-chat`: config, the `LLMClient` seam, JSON logs, history trimming, error handling.
+- **Predicted vs actual:** —
+- **Surprised me:**
+  - At temperature 1.5, top-p 0.9 keeps **894** tokens (vs 4 at 0.3).
+  - The first live chat hit a repetition loop (484 chunks), and I couldn't reproduce it in 18 runs.
+  - The model mixes up "mera" (whose name?): it answered "Mera naam Fryday".
+- **I can now explain:**
+  - Logits vs probabilities (softmax only cares about differences).
+  - Greedy, temperature, top-k, top-p, beam search, logprobs.
+  - Why temperature 0 can still vary (near-ties plus floating point).
+  - Low temperature for tool calls.
+  - Why `max_retries=0` for streaming.
+  - Why history keeps the system prompt first (prefix cache).
+- **Still don't get:** —
+- **Next:** v0 build 2, a contract test against a stub server plus OpenTelemetry spans.
+
 ### 2026-10-10: F session 7 (learn): what model hosting means
 - **Built or watched:**
   - Hosting layers: weights, runtime, server, contract, app.
