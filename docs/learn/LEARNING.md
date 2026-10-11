@@ -39,7 +39,28 @@ flowchart LR
 
 ---
 
-### 2026-10-11: v0 build 4, part 1: precision and quantisation (in progress)
+### 2026-10-11: v0 build 4, part 2: quantising the real model and measuring it
+- **Built:**
+  - `mlx_lm.convert` of the original bf16 to 8, 6 and 4 bits (4–6 s each). Our 4-bit is bit-identical to mlx-community's (904/904 tensors).
+  - `spikes/learn/v0_quant.py`: memory, TTFT, decode speed, exact match and teacher-forced agreement. The results are in `EXPERIMENTS.md`.
+- **Results:**
+  - Decode: 15.9 → 29.4 → 36.9 → 53.7 tok/s, 79–84% of the bytes ceiling for every variant.
+  - TTFT: 206 → 133 ms.
+  - Teacher-forced agreement: 98.5% (bf16 noise floor) / 97.3% / 96.0% / 77.6%.
+- **Predicted vs actual:** Claude guessed 4-bit agreement would be 90%+. It was **77.6%**. There is a real step between 6 and 4 bits.
+- **Surprised me:**
+  - The 4-bit replies read fine by eye even though 0/8 matched bf16 exactly.
+  - bf16 against itself is only 98.5%: a batched pass and incremental decoding round differently.
+  - Converting took seconds; it's cheap work.
+- **I can now explain:**
+  - Why fewer bytes means faster decode: the GPU waits on the memory pipe about 95% of the time, and un-quantising is nearly free.
+  - Why TTFT improves less: prefill shares one weight read across about 40 tokens, which is the same idea as batching.
+  - Divergence vs degradation.
+  - Verifying a third-party conversion by rebuilding it from the official source.
+- **Still don't get:** —
+- **Next:** v0 close. Open items: the Part B real-server `top_k` check and the live Langfuse check, then the v0 PR. Build 3 (sampler) remains optional.
+
+### 2026-10-11: v0 build 4, part 1: precision and quantisation
 - **Built or watched:**
   - Hugging Face model repo anatomy: config, safetensors, index, tokenizer files, chat template, generation config.
   - Qwen3-4B architecture: about 101 M parameters per layer × 36 layers, plus 0.39 B for the tied embedding, ≈ 4.02 B.
