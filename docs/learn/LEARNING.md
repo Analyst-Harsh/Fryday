@@ -25,6 +25,7 @@ flowchart LR
 |---|---|---|---|
 | 2026-10-08 | What is a model **contract** (app ↔ model-server API shape, so backends can be swapped), and how is it different from **structured output** (the model's text following a schema)? | due 2026-10-15 | due 2026-11-05 |
 | 2026-10-09 | (F2 quiz, skipped; ask at the F checkpoint) What are query, key and value? Why does a low temperature make output predictable? Why does an LLM need attention instead of fixed word embeddings? | due F session 10 | — |
+| 2026-10-13 | (F8 quiz, not attempted; answers were shown instead) (1) Explain the voice → Whisper journey: sampling, resampling to 16 kHz, spectrogram, mel, log, and why each step is needed. (2) What happens if 48 kHz audio is sent to Whisper labelled as 16 kHz? (3) What goes wrong with `x[::3]` and no filter, and where does a 12 kHz whistle land? | due 2026-10-20 | due 2026-11-10 |
 
 ## Entry template
 ```markdown
@@ -38,6 +39,26 @@ flowchart LR
 ```
 
 ---
+
+### 2026-10-13: F session 8 (learn): sound and speech overview
+- **Built or watched:**
+  - Velardo, *Understanding Audio Signals for ML* and *Mel Spectrograms Explained Easily*; 3Blue1Brown, *Fourier Transform*.
+  - `spikes/learn/f8_audio.py`: recorded my own voice at 48 kHz; printed samples, PCM16, dBFS and energy by band; resampled to 16 and 8 kHz; plotted the waveform, the STFT spectrogram and the Whisper-style log-mel (80 × 301); played all three versions back.
+  - Walked through every part: channels and frames, float → PCM16 (the same ruler idea as weight quantisation, with 65,536 marks), FFT → power (Parseval), Nyquist and aliasing, filtered resampling vs `x[::3]`, the WAV header, STFT windows, the mel filterbank, log.
+- **Predicted vs actual:** predictions were not given this session.
+- **Surprised me:**
+  - Two waveforms with the same tones but different phases are uncorrelated (−0.03), yet their spectra are identical.
+  - A linear spectrogram has *more* numbers per second than the waveform (20,100 vs 16,000); the mel is what compresses it (8,000).
+  - 2× louder audio shifts every log-mel cell by exactly +6.02 dB.
+  - Naive `x[::3]` turned a 10 kHz tone into a fake 6 kHz tone; `librosa.resample` (soxr_hq) removed it.
+- **I can now explain:**
+  - Sample rate, bit depth, mono/stereo frames.
+  - Why energy = amplitude².
+  - Nyquist (SR/2) and aliasing.
+  - Why resampling filters first.
+  - Why ASR uses log-mel: drop phase, keep formants, mel resolution where speech information lives, log for volume invariance. Whisper uses 80 mels (128 in large-v3), 25 ms windows and a 10 ms hop.
+- **Still don't get:** quiz not attempted; logged above for re-asking.
+- **Tomorrow's first step:** v3 learn 1, the TTS pipeline (text → phonemes → acoustic model → vocoder, RTF), with HF Audio Course ch.6.
 
 ### 2026-10-11: v0 build 4, part 2: quantising the real model and measuring it
 - **Built:**
