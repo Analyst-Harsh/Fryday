@@ -147,7 +147,12 @@ Exact IDs were checked against model cards on 2026-10-04 unless marked *(verify)
 24 GB estimate (a spike, not a fact): ASR ~2 + LLM ~3 + 6 KV cap + TTS ~2–3 + embed ~1.1 + CUDA contexts/Triton overhead ≈ 16–18 GB.
 
 ### 3.1 Text normaliser
-- **Out (before TTS): rules, no model.**
+- **Out (before TTS): normalise at the source, then rules as the safety net (decided 2026-10-16).**
+  - **Layer 1, the reply LLM's prompt:** write numbers, times and amounts as spoken Hinglish words ("saat baje", "do sau pachaas rupaye"). It's free (same generation, no extra latency) and context-aware ("iPhone 7" stays *seven*). A 4-bit 4B model won't comply every time, so it's never the only layer.
+  - **Layer 2, deterministic rules (below):** catch any digits, ₹, times or dates left over. They're golden-tested and never silently wrong, which matters most for amounts and times.
+  - **Layer 3, only if v7a evals show a long-tail problem:** a learned normaliser for rare tokens, kept off the latency-critical path.
+  - Open for v1: on-screen text and tool calls need digits, while speech needs words. Decide then whether the reply carries both forms.
+- **Layer 2 detail: rules, no model.**
   - Rules cover currency, time, date, plain numbers and abbreviations, turning them into Hindi words.
   - NVIDIA NeMo text processing supports Hindi only for *inverse* normalisation (words → numbers). Its Hindi numbers→words support is unverified, so plan a small custom rule set and adopt NeMo only if spike 0 shows it works.
   - Golden unit tests cover every rupee amount and number format.

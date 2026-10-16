@@ -26,6 +26,7 @@ flowchart LR
 | 2026-10-08 | What is a model **contract** (app ↔ model-server API shape, so backends can be swapped), and how is it different from **structured output** (the model's text following a schema)? | due 2026-10-15 | due 2026-11-05 |
 | 2026-10-09 | (F2 quiz, skipped; ask at the F checkpoint) What are query, key and value? Why does a low temperature make output predictable? Why does an LLM need attention instead of fixed word embeddings? | due F session 10 | — |
 | 2026-10-13 | (F8 quiz, not attempted; answers were shown instead) (1) Explain the voice → Whisper journey: sampling, resampling to 16 kHz, spectrogram, mel, log, and why each step is needed. (2) What happens if 48 kHz audio is sent to Whisper labelled as 16 kHz? (3) What goes wrong with `x[::3]` and no filter, and where does a 12 kHz whistle land? | due 2026-10-20 | due 2026-11-10 |
+| 2026-10-16 | (v3 learn 1 quiz, weak) Which TTS stages are rules and which are neural (normalisation, G2P, acoustic model, vocoder)? Why is a silently dropped ₹ dangerous for Fryday, and which layer catches it? | due 2026-10-23 | due 2026-11-13 |
 
 ## Entry template
 ```markdown
@@ -39,6 +40,26 @@ flowchart LR
 ```
 
 ---
+
+### 2026-10-16: v3 learn 1: how text becomes speech
+- **Built or watched:**
+  - HF Audio Course ch.6; Tacotron 2 and StyleTTS 2 / Kokoro walkthrough videos.
+  - Live explanation: the four stages (normalise → G2P → acoustic model → vocoder); one-to-many and prosody; autoregressive vs parallel; vocoders (Griffin-Lim → WaveNet → HiFi-GAN → iSTFTNet); RTF vs time to first audio.
+  - Design discussion: why not an LLM normaliser. The HLD §3.1 now has three layers: the LLM prompt writes words, rules are the safety net, and a learned model only for the long tail.
+  - `spikes/learn/v3_tts_toy.py`: Kokoro-82M via mlx-audio, pinned; English, Hindi Devanagari vs Roman, male voice, digits and ₹. Results are in `EXPERIMENTS.md`.
+- **Predicted vs actual:** no predictions given. By ear: Devanagari "spot on", Roman weak, digits "best-sounding".
+- **Surprised me:**
+  - The best-sounding sentence was the wrong one: espeak dropped ₹ silently.
+  - Roman Hindi failed in G2P, not in the model ("baje" → "badge").
+  - RTF ≈ 0.05.
+  - Peak memory 1.45 GB for an 82 M model.
+- **I can now explain:**
+  - The TTS pipeline and where each failure lives.
+  - Why vocoders can't recover the exact waveform, and why that's fine.
+  - RTF vs first-audio latency.
+  - Why rules beat an LLM for high-stakes normalisation.
+- **Quiz:** Q1 order correct but rules vs neural missing; Q2 right (G2P), implication refined to "Devanagari at TTS input"; Q3 half (missed the money-path danger). Weak spots are logged above.
+- **Tomorrow's first step:** v3 learn 2, TTS quality metrics (MOS, UTMOS-style prediction, ASR round-trip intelligibility) and codecs (Opus).
 
 ### 2026-10-13: F session 8 (learn): sound and speech overview
 - **Built or watched:**

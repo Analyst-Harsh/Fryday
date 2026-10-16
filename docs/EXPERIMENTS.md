@@ -12,6 +12,38 @@ Every result goes here, **including negative ones** (roadmap working principles)
 - **Decision:** what changes because of this (HLD/roadmap update, next step).
 ```
 
+## 2026-10-16: Kokoro-82M on the M5: speed, memory, Hindi G2P (v3 learn 1, first look at S0-5)
+- **Question:** is Kokoro fast enough for voice on the Mac, and how good is its Hindi?
+- **Setup:**
+  - M5, 16 GB.
+  - Model: `mlx-community/Kokoro-82M-bf16`, revision `a71e4d38b236d968966a2002c4c895dbd12b1c3c` (Apache-2.0).
+  - mlx-audio 0.5.9; G2P via misaki and espeak-ng (from the `espeakng-loader` wheel, no brew).
+  - Voices loaded from the pinned snapshot by path. By name, mlx-audio fetches them **unpinned** from `prince-canuma/Kokoro-82M`.
+  - 5 sentences, about 5 s of audio each, n=1 each, after one warm-up. Script: `spikes/learn/v3_tts_toy.py`.
+- **Result:**
+
+  | Sentence | Voice | Audio | First audio | RTF |
+  |---|---|---|---|---|
+  | English | af_heart | 4.88 s | 339 ms | 0.071 |
+  | Hindi, Devanagari | hf_alpha | 4.78 s | 260 ms | 0.056 |
+  | Hindi, Roman | hf_alpha | 4.83 s | 245 ms | 0.053 |
+  | Hindi, Devanagari | hm_omega | 4.97 s | 253 ms | 0.053 |
+  | Hindi, digits and ₹ | hf_alpha | 4.95 s | 251 ms | 0.053 |
+
+  Peak MLX memory was **1.45 GB**; the weights are only about 0.16 GB.
+- **Observations:**
+  - **Speed:** RTF ≈ 0.05, about 18× faster than real time. First audio ≈ total time, because each sentence is one chunk; shorter first chunks (v5) should cut it.
+  - **Owner's listening check:** Devanagari Hindi was "spot on"; Roman Hindi was weak.
+  - **The cause was G2P, not the model.** The Hindi G2P read Roman letters with English rules: "baje" became /bˈAʤ/ ("badge"), "hai" /hˈI/, "main" /mˈAn/.
+  - **Digits:** espeak expanded "7" → *saat* correctly. But **"₹250" → "do sau pachaas", with the ₹ silently dropped**. The owner rated it the best-sounding sentence: fluent, and wrong.
+  - **A trap:** the library warns that EspeakG2P has no chunking, so long texts may be truncated unless split on `\n`.
+- **Decision:**
+  - Kokoro stays the v3 candidate. Speed is not a concern.
+  - TTS input must be **Devanagari**, which supports HLD option A: transliterate before TTS. The full script decision is in v4 (S0-8).
+  - The layer-2 normaliser needs a ₹ rule with a golden test (S0-9).
+  - Count about 1.5 GB for TTS in the S0-2 memory budget.
+  - Still to do in v3: a formal listening/MOS check, Hindi voice choice, and the MMS fallback only if needed.
+
 ## 2026-10-11: bf16 vs 8/6/4-bit Qwen3-4B on the Mac: memory, speed, agreement (v0 build 4)
 - **Question:** what do 8, 6 and 4-bit quantisation buy in memory and speed on the M5, and how far do they drift from bf16?
 - **Setup:**
