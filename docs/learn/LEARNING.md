@@ -27,6 +27,7 @@ flowchart LR
 | 2026-10-09 | (F2 quiz, skipped; ask at the F checkpoint) What are query, key and value? Why does a low temperature make output predictable? Why does an LLM need attention instead of fixed word embeddings? | due F session 10 | — |
 | 2026-10-13 | (F8 quiz, not attempted; answers were shown instead) (1) Explain the voice → Whisper journey: sampling, resampling to 16 kHz, spectrogram, mel, log, and why each step is needed. (2) What happens if 48 kHz audio is sent to Whisper labelled as 16 kHz? (3) What goes wrong with `x[::3]` and no filter, and where does a 12 kHz whistle land? | due 2026-10-20 | due 2026-11-10 |
 | 2026-10-16 | (v3 learn 1 quiz, weak) Which TTS stages are rules and which are neural (normalisation, G2P, acoustic model, vocoder)? Why is a silently dropped ₹ dangerous for Fryday, and which layer catches it? | due 2026-10-23 | due 2026-11-13 |
+| 2026-10-18 | (v3 learn 2 quiz, skipped) (1) Explain MOS, why one listener's rating means little, and what a ±0.44 95% CI tells you. (2) Give two reasons UTMOS ranked mispronounced `hi_roman` above `hi_deva`. (3) "सात" was flagged missing in every Hindi file: whose fault, and how do you fix the check without hiding real TTS errors? | due 2026-10-25 | due 2026-11-15 |
 
 ## Entry template
 ```markdown
@@ -40,6 +41,21 @@ flowchart LR
 ```
 
 ---
+
+### 2026-10-18: v3 learn 2: judging TTS quality, and codecs
+- **Built or watched:**
+  - Reading (no strong video exists): HF Audio Course ch.6 evaluation; Wikipedia on MOS and on Opus; the SpeechMOS README.
+  - Live explanation: why TTS has no single right answer; MOS and its confidence interval (±1.96σ/√n), CMOS, SMOS, MUSHRA; predicted MOS (UTMOS) and when not to trust it; ASR round trip with WER/CER and entity checks; Opus (SILK linear prediction, CELT MDCT, masking, 20 ms frames, FEC/DTX); neural codecs in one line.
+  - `spikes/learn/v3_tts_eval.py`: UTMOS22 plus Whisper large-v3-turbo round trip on the five learn-1 WAVs. Results are in `EXPERIMENTS.md`.
+- **Predicted vs actual:** no predictions given.
+- **Surprised me:**
+  - UTMOS ranked the mispronounced Roman file *above* Devanagari; CER (24% vs 9%) matched my ears.
+  - The round trip caught the missing रुपये that both UTMOS (4.31) and my ears missed.
+  - Whisper writes साथ for सात in every Hindi file, so a key-word check gives false alarms: the ASR confound.
+  - Python's `\w` drops Hindi vowel signs (सुबह → "स बह"); caught before the run.
+- **I can now explain:** naturalness vs intelligibility; why MOS needs many ratings; what UTMOS can and cannot see; why averaged WER hides the one word that matters; how Opus gets about 10× smaller than PCM16.
+- **Still don't get:** quiz skipped; logged above for re-asking.
+- **Tomorrow's first step:** v3 build 1, the `speak(text) -> pcm` seam plus a contract test.
 
 ### 2026-10-16: v3 learn 1: how text becomes speech
 - **Built or watched:**

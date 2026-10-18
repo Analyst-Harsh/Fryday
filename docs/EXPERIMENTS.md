@@ -12,6 +12,33 @@ Every result goes here, **including negative ones** (roadmap working principles)
 - **Decision:** what changes because of this (HLD/roadmap update, next step).
 ```
 
+## 2026-10-18: Scoring the Kokoro WAVs: predicted MOS vs ASR round trip vs ears (v3 learn 2)
+- **Question:** can automatic metrics replace the owner's listening check, and which one catches the missing "rupaye"?
+- **Setup:**
+  - The 5 WAVs from the 2026-10-16 entry (Kokoro, 24 kHz). n=1 per file, one run.
+  - **Naturalness:** UTMOS22 strong via SpeechMOS, torch.hub pinned to commit `ed25eac` (tag v1.2.0, MIT weights). Trained on English listening tests.
+  - **Intelligibility:** mlx-whisper 0.4.3, `mlx-community/whisper-large-v3-turbo` revision `a4aaeec`, language forced. CER (jiwer 4.0.0) against the **intended normalised** text, with punctuation and spelling variants (ँ/ं, रुपए/रुपये) unified on both sides. A targeted check that the key words (सात, रुपये) come back as whole words.
+  - Script: `spikes/learn/v3_tts_eval.py`.
+- **Result:**
+
+  | File | UTMOS | CER | Key words missing | Owner's ears |
+  |---|---|---|---|---|
+  | en | 4.50 | 10% | none | — |
+  | hi_deva | 4.27 | 9% | सात (false alarm) | spot on |
+  | hi_roman | 4.38 | 24% | सात (false alarm) | weak |
+  | hi_deva_male | 4.11 | 11% | सात (false alarm) | — |
+  | hi_digits | 4.31 | 24% | सात (false alarm), **रुपये** | best-sounding |
+
+- **Observations:**
+  - **UTMOS disagrees with the ears:** it ranks the mispronounced Roman file above Devanagari. All scores sit in 4.11–4.50, so with n=1 the gaps are noise, and Hindi is out of domain for the predictor.
+  - **CER agrees with the ears:** Roman 24% vs Devanagari 9%. Whisper heard "काल सबसाथ बेजिम", the G2P mispronunciation.
+  - **The round trip caught the missing रुपये** that UTMOS (4.31) and the owner's ears missed.
+  - **ASR confound:** Whisper writes साथ for सात in every Hindi file. The two are near-homophones, and the owner heard सात correctly, so the key-word check raised a false alarm on all four. Whisper also gives बजी for बजे and merges "दो सौ पचास" into one word. English CER is all formatting ("friday", "7").
+- **Decision:**
+  - **TTS regression checks:** ASR round-trip CER plus entity checks (amounts, times, names) on a fixed sentence set, compared relative to a baseline, never against 0%.
+  - **Hindi voice choice (v3 build):** decided by the owner's ears with A/B (CMOS-style) comparisons. UTMOS is only a "did quality crash?" alarm.
+  - **First evidence for v4 (Whisper Hindi):** near-homophones, verb endings and number formatting are weak spots. Try an `initial_prompt` with "Fryday" in it, and measure properly in v4 (S0-8).
+
 ## 2026-10-16: Kokoro-82M on the M5: speed, memory, Hindi G2P (v3 learn 1, first look at S0-5)
 - **Question:** is Kokoro fast enough for voice on the Mac, and how good is its Hindi?
 - **Setup:**
