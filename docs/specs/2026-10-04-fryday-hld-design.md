@@ -156,10 +156,12 @@ Exact IDs were checked against model cards on 2026-10-04 unless marked *(verify)
   - Rules cover currency, time, date, plain numbers and abbreviations, turning them into Hindi words.
   - NVIDIA NeMo text processing supports Hindi only for *inverse* normalisation (words → numbers). Its Hindi numbers→words support is unverified, so plan a small custom rule set and adopt NeMo only if spike 0 shows it works.
   - Golden unit tests cover every rupee amount and number format.
-- **In (after ASR): the script convention, decided in spike 0.**
-  - Option A: keep Roman Hinglish, which Hinglish ASR models output natively, and transliterate to Devanagari only before TTS.
-  - Option B: fine-tune the ASR to output Devanagari for Hindi words.
-  - Either way, transliteration (e.g. AI4Bharat IndicXlit *(verify)*) is the fallback.
+- **In (after ASR): the script convention. Decided 2026-10-20 (S0-8, EXPERIMENTS).**
+  - **ASR: off-the-shelf Whisper large-v3-turbo with `language="hi"`, which outputs Devanagari.** No fine-tune.
+    - On 100 MUCS clips with matched decoding, it tied with Oriserve's Roman Hinglish fine-tune (median skeleton CER 31.1% vs 31.3%).
+    - It was about 3× faster here, it's already in the stack, and it produced no junk tokens (Oriserve: stray `nan`, Cyrillic).
+  - The script of the ASR **input** barely affects latency: the user's ~10 words are prefill. The 2.5× Devanagari token cost is in the **reply**. Whether replies should be Roman plus transliteration (e.g. AI4Bharat IndicXlit *(verify)*) before TTS is a v5 latency question.
+  - Known gap: Whisper sometimes writes English words in Latin script ("document"). That's harmless for the LLM, but if the reply copies them, Kokoro's Hindi voice misreads them.
 - **Money safety does not depend on TTS:** amounts are always shown as text on the approval card.
 
 ## 4. Learning map

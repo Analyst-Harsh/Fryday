@@ -317,7 +317,7 @@ Each version lists what you **learn** (interview topics), what you **build**, th
   - WER and CER;
   - hallucination on silence;
   - the code-switching / script problem.
-- **Build:** a `transcribe(pcm) -> str` seam with `mlx-whisper` and a tap-to-talk CLI. Score Oriserve (Roman) vs Whisper (Devanagari) on MUCS clips with `jiwer`, then **decide the script convention** (S0-8). **Record your 30–60 min own-voice entity test set** (1 session; used later in v7a). Update the HLD if the TTS choice moves away from Magpie.
+- **Build:** a `transcribe(pcm) -> str` seam with `mlx-whisper` and a tap-to-talk CLI. Score Oriserve (Roman) vs Whisper (Devanagari) on MUCS clips with `jiwer`, then **decide the script convention** (S0-8). **Record your 30–60 min own-voice entity test set** (1 session; used later in v7a). *(2026-10-20: S0-8 decided, Devanagari via Whisper. The owner chose not to record an own-voice set; v7a will use public sets plus synthetic entity clips.)* Update the HLD if the TTS choice moves away from Magpie.
 - **Source:** old phase 7.
 
 ### v5: Real-time streaming turn
@@ -334,6 +334,7 @@ Each version lists what you **learn** (interview topics), what you **build**, th
   - streaming-ASR chunking as a concept.
 - **Build:**
   - a FastAPI WebSocket gateway (token auth in the first message, Origin check, protocol `v` field);
+  - measure reply script vs first audio: Devanagari replies vs Roman replies plus transliteration before TTS (left over from S0-8, 2026-10-20);
   - a turn manager and a thin JS mic client;
   - per-hop spans;
   - the full memory-fit run (S0-2), with early RSS checks already done in v3 and v4 as each model was added;

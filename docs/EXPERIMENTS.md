@@ -12,6 +12,35 @@ Every result goes here, **including negative ones** (roadmap working principles)
 - **Decision:** what changes because of this (HLD/roadmap update, next step).
 ```
 
+## 2026-10-20: Script convention, Whisper → Devanagari vs Oriserve → Roman Hinglish (v4 build, S0-8)
+- **Question:** which ASR output script should Fryday use? Is the Hinglish fine-tune more accurate than off-the-shelf Whisper?
+- **Setup:**
+  - `spikes/learn/v4_script_eval.py`.
+  - 100 random clips (seed 0) from MUCS-Hinglish test shard 0 (`dianavdavidson/MUCS-Hinglish` @ `3c66ee1`, CC-BY-4.0; 1.3–30.6 s, median 5.5 s; read technical tutorials).
+  - Whisper large-v3-turbo via mlx-whisper (`a4aaeec`, `language="hi"`, default loop guard).
+  - Oriserve `Whisper-Hindi2Hinglish-Apex` (turbo base, Apache-2.0, `f3214ee`) via transformers on MPS, `language="en"` as its card says, long-form timestamps on.
+  - **Score:** references are mixed script, so every text is reduced to a sound skeleton (IAST romanisation, accents, vowels and h stripped, repeats collapsed), then CER. One run per configuration.
+- **Prediction (owner):** Whisper with Hindi wins.
+- **Result:**
+
+  | Oriserve config | Whisper median CER | Oriserve median CER | Clips won (W / O) | s/clip (W / O) |
+  |---|---|---|---|---|
+  | fp16, no loop guard | 30.4% | 47.7% | 66 / 29 | 0.51 / 1.35 |
+  | fp32, no loop guard | 30.4% | 47.7% | 66 / 29 | 0.51 / 3.14 |
+  | fp16, **same loop guard as mlx-whisper** (temperature fallback, compression ratio 1.35 in token space, logprob −1.0, no conditioning) | 31.1% | 31.3% | 56 / 37 | 0.50 / 1.71 |
+
+- **Findings:**
+  - **Without the guard, Oriserve looped** (`nan?nan?…`, `0.0.0…`); pooled CER was 232%. fp32 didn't change it, so it wasn't precision. With the guard it **tied** Whisper. Most of the 16-point "loss" came from our harness, not the model.
+  - Oriserve still emits stray junk tokens: a trailing `nan` (likely broken training labels; hypothesis) and Cyrillic `Кор`.
+  - Whisper's score moved between identical runs (pooled 34% → 41%, wins 66 → 56) because its fallback samples randomly. n = 1 run per configuration, so gaps of a few points are noise.
+  - MUCS audio and references are partly misaligned: both models agree with each other but not with the reference. Absolute CERs are inflated; only the comparison means something.
+  - Whisper with `language="hi"` sometimes writes English words in Latin script ("document", "replace with field").
+  - Speed isn't a fair comparison (MLX vs PyTorch MPS). Oriserve is turbo-based, so an MLX conversion would likely match Whisper.
+- **Decision:**
+  - **ASR stays Whisper with Devanagari**: equal accuracy, faster in our stack, no junk tokens. HLD §3.1 updated.
+  - The token cost of Devanagari sits in the LLM **reply**, not the ASR input. Roman replies plus transliteration before TTS is now a v5 latency measurement.
+- **Lesson:** match decoding settings before comparing models. A fine-tune isn't automatically better off its own data distribution.
+
 ## 2026-10-20: Inside Whisper: padding cost, the log-mel grid, silence (v4 learn 1 toy)
 - **Question:** does a 3 s clip cost as much as 30 s (padding)? What does Whisper output on silence?
 - **Setup:** `spikes/learn/v4_asr_toy.py`. Whisper large-v3-turbo (mlx-whisper, `a4aaeec`, `language="hi"`) through `ASRClient`, warm, median of 3 runs. Input: the owner's 3 s F8 clip, repeated with `np.resize` to 10 s and 30 s; 5 s of zeros; 5 s of Gaussian noise (σ = 30, about −60 dBFS).
