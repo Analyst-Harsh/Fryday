@@ -410,7 +410,8 @@ Each version lists what you **learn** (interview topics), what you **build**, th
   - KServe v2 protocol;
   - Triton model repo, `config.pbtxt`, backends (ONNX, Python), dynamic batching, instance groups, ensembles, metrics;
   - gRPC streaming and cancellation;
-  - warm-up and readiness.
+  - warm-up and readiness;
+  - request priority with batching: Triton `priority_levels` and queue policies (timeouts, max queue size), and why voice wants earliest-deadline-first (deadline = when the user's playback buffer runs dry; first chunks have none). Added 2026-10-20 from the v3 design question.
 - **Build:**
   - Arm64 CPU Triton (S0-1) gets a **1-session timebox**; if it fails, ORT goes behind the same contract.
   - Embeddings, ASR and **TTS (Python backend)** go behind KServe v2.
@@ -420,6 +421,7 @@ Each version lists what you **learn** (interview topics), what you **build**, th
     - Cap the Docker VM at 4 GB or less.
   - Swap the seams; contract tests pass against both.
   - Measure warm-up and cold start.
+  - Try TTS with `priority_levels: 2` (first chunk high, later chunks low) and compare first-audio p95 against FIFO under a small concurrent load.
   - Note in the gaps register that dynamic batching on CPU won't show GPU batching behaviour; that is revisited in v14.
   - Nemotron streaming ASR as a stretch.
 - **Source:** old phases 2 and 7, HLD §10.
