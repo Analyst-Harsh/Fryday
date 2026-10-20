@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     # Hindi (EXPERIMENTS 2026-10-16). lang "h" = Hindi G2P, "a" = US English.
     tts_model: str = "mlx-community/Kokoro-82M-bf16"
     tts_revision: str = "a71e4d38b236d968966a2002c4c895dbd12b1c3c"
-    tts_voice: str = "hf_alpha"  # provisional; chosen by ear in v3 build 3
+    tts_voice: str = "hf_alpha"  # chosen blind by ear (EXPERIMENTS 2026-10-20)
     tts_lang: str = "h"
 
     # ASR: Whisper large-v3-turbo (MIT) via mlx-whisper, pinned. "hi" forces Hindi, so

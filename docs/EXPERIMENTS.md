@@ -12,6 +12,13 @@ Every result goes here, **including negative ones** (roadmap working principles)
 - **Decision:** what changes because of this (HLD/roadmap update, next step).
 ```
 
+## 2026-10-20: Which Kokoro Hindi voice? Blind listening (v3 build 3, half of S0-5)
+- **Question:** which of Kokoro's 4 Hindi voices sounds best for Fryday?
+- **Setup:** `spikes/learn/v3_voice_pick.py`. The same 3 sentences (greeting, a 7:30 time, ₹2.5 लाख and ₹15,999), each passed through `normalise()`, in `hf_alpha`, `hf_beta`, `hm_omega` and `hm_psi`. The files were saved under shuffled letters A–D, with the key hidden until the owner chose. One listener (the owner), n=1, no scores, just a preference.
+- **Prediction:** the owner expected to prefer `hf_beta`.
+- **Result:** picked **D = `hf_alpha`** as the most natural (A = `hf_beta`, B = `hm_omega`, C = `hm_psi`). All numbers were heard correctly (साढ़े सात बजे, ढाई लाख रुपये, पंद्रह हज़ार नौ सौ निन्यानबे रुपये), the first end-to-end ear check of `normalise()`.
+- **Decision:** keep `tts_voice = "hf_alpha"`. The prediction was wrong, which is the reason to listen blind. One listener isn't a MOS; a multi-listener test comes with v7a evals if voice quality becomes a question.
+
 ## 2026-10-20: What does Kokoro's text frontend read correctly? Hindi (espeak) vs English (misaki) (v3 build 2, S0-9)
 - **Question:** which number, money and time forms does the TTS frontend already speak right, so the rules layer only fixes the rest?
 - **Setup:** misaki 0.9 `EspeakG2P("hi")` (what mlx-audio Kokoro uses for `lang_code="h"`) and `misaki.en.G2P` (US English), phonemes read by hand. n=1 per input, deterministic.
