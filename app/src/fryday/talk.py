@@ -21,6 +21,7 @@ from fryday.cli import trim_history
 from fryday.config import Settings
 from fryday.llm import LLMClient, Message
 from fryday.logs import setup_logging
+from fryday.normalise import normalise
 from fryday.tracing import (
     content,
     init_tracing,
@@ -111,7 +112,8 @@ def main() -> None:
         for _ in llm.stream(warm):
             pass
     except openai.APIError:
-        print("Can't reach the model server. Run `make llm` in another terminal first.")
+        # Also raised on timeout (e.g. the server is still downloading or loading a model).
+        print("Model server unreachable or too slow. Run `make llm` and wait until it's loaded.")
         return
     speaker = Speaker(tts.sample_rate)
 
@@ -140,8 +142,9 @@ def main() -> None:
 
             def say(sentence: str) -> Iterator[bytes]:
                 print(f"fryday> {sentence}")
-                with span("tts", input=sentence):
-                    yield from tts.speak(sentence)
+                spoken = normalise(sentence)  # layer 2 safety net: ₹, times, decimals
+                with span("tts", input=spoken):
+                    yield from tts.speak(spoken)
 
             # One trace per turn: asr, llm.stream and each tts sentence are its children.
             with trace_root("voice_turn", session_id=session_id) as turn:

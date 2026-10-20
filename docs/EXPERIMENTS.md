@@ -12,6 +12,28 @@ Every result goes here, **including negative ones** (roadmap working principles)
 - **Decision:** what changes because of this (HLD/roadmap update, next step).
 ```
 
+## 2026-10-20: What does Kokoro's text frontend read correctly? Hindi (espeak) vs English (misaki) (v3 build 2, S0-9)
+- **Question:** which number, money and time forms does the TTS frontend already speak right, so the rules layer only fixes the rest?
+- **Setup:** misaki 0.9 `EspeakG2P("hi")` (what mlx-audio Kokoro uses for `lang_code="h"`) and `misaki.en.G2P` (US English), phonemes read by hand. n=1 per input, deterministic.
+- **Result:**
+
+  | Input | Hindi (espeak-ng) | English (misaki) |
+  |---|---|---|
+  | `99` / `150000` | निन्यानबे / एक लाख पचास हज़ार ✅ | ✅ |
+  | `50%` | पचास प्रतिशत ✅ | fifty percent ✅ |
+  | `2.5` | दो . पाँच ❌ | two point five ✅ |
+  | `7:30` | सात तीस ❌ | seven ❓ thirty ⚠️ |
+  | `₹250` | दो सौ पचास, **₹ dropped** ❌ | ❓ two fifty ❌ |
+  | `1,50,000` | एक, पचास, शून्य शून्य शून्य ❌ | one hundred fifty thousand ✅ |
+  | `10/12` | दस स्लैश बारह ❌ | ten twelve ⚠️ |
+  | `3rd` | तीन आरडी ❌ | third ✅ |
+
+- **Findings:**
+  - misaki has real text normalisation only for English (`num2words`, `$ £ €`). For Hindi it passes text straight to espeak-ng.
+  - espeak reads plain integers and % well, including lakh grouping, so build 2 rewrites only ₹, times, decimals and Indian commas, and leaves digits to espeak (`app/src/fryday/normalise.py`, 21 golden tests).
+  - This explains the missing रुपये in the 2026-10-18 `hi_digits` result.
+- **Decision:** regex rules now; dates and ordinals are left out (rare in a tool-less chatbot). Relying on espeak for digits couples us to the TTS frontend (production gap #31).
+
 ## 2026-10-19: First speech-to-speech turn on the Mac: latency by stage (v3 build 1 skeleton)
 - **Question:** does mic → ASR → LLM → TTS work end to end on the M5, and where does the time go?
 - **Setup:**
