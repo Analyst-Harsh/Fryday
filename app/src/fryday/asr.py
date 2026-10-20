@@ -21,7 +21,7 @@ Transcribe = Callable[..., dict[str, Any]]
 def _load_whisper(settings: Settings) -> tuple[Transcribe, str]:
     """The real transcribe function and the pinned snapshot's local path."""
     # Heavy imports only for the real model. hf_hub ships partial types.
-    import mlx_whisper
+    import mlx_whisper  # pyright: ignore[reportMissingImports]  # macOS-only; absent on Linux CI
     from huggingface_hub import snapshot_download  # pyright: ignore[reportUnknownVariableType]
 
     path = snapshot_download(settings.asr_model, revision=settings.asr_revision)

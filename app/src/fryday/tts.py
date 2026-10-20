@@ -32,9 +32,10 @@ def to_pcm16(audio: np.ndarray) -> bytes:
 
 def _load_kokoro(settings: Settings) -> tuple[SpeechModel, str]:
     """Load the pinned Kokoro snapshot: (model, path of the voice file)."""
-    # Heavy imports only for the real model. hf_hub ships partial types.
+    # Heavy imports only for the real model. hf_hub ships partial types; mlx-audio is
+    # macOS-only, so it's absent on the Linux CI runner.
     from huggingface_hub import snapshot_download  # pyright: ignore[reportUnknownVariableType]
-    from mlx_audio.tts.utils import load_model
+    from mlx_audio.tts.utils import load_model  # pyright: ignore
 
     # Pin model AND voice to one revision: by name, mlx-audio fetches voices
     # unpinned from another repo (EXPERIMENTS 2026-10-16).
