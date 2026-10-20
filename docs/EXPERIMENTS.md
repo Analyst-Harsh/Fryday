@@ -12,6 +12,26 @@ Every result goes here, **including negative ones** (roadmap working principles)
 - **Decision:** what changes because of this (HLD/roadmap update, next step).
 ```
 
+## 2026-10-20: Inside Whisper: padding cost, the log-mel grid, silence (v4 learn 1 toy)
+- **Question:** does a 3 s clip cost as much as 30 s (padding)? What does Whisper output on silence?
+- **Setup:** `spikes/learn/v4_asr_toy.py`. Whisper large-v3-turbo (mlx-whisper, `a4aaeec`, `language="hi"`) through `ASRClient`, warm, median of 3 runs. Input: the owner's 3 s F8 clip, repeated with `np.resize` to 10 s and 30 s; 5 s of zeros; 5 s of Gaussian noise (σ = 30, about −60 dBFS).
+- **Predictions (owner):** same time for 3 s and 30 s; invents words on silence.
+- **Result:**
+
+  | Input | Time | Output |
+  |---|---|---|
+  | 3 s speech | 0.45 s | फ्राइडे, कल सुबह साथ बज़े याद देखे |
+  | 10 s (clip repeated) | 0.44 s | the phrase **once** |
+  | 30 s (clip repeated) | 0.44 s | the phrase **once** |
+  | 5 s pure silence | — | **झाल झाल** |
+  | 5 s quiet noise | — | **झाल झाल** |
+
+  Log-mel: 3 s → (300, 128), i.e. 100 frames/s (hop 160 at 16 kHz) × 128 mel bins. Padded to (3000, 128) for the encoder.
+- **Findings:**
+  - Both predictions held. Hallucination on silence is real, which justifies the `SILENT_PEAK` gate in `talk.py`.
+  - **The timing test is confounded.** Whisper transcribed repeated speech only once, even with 0.5 s gaps (21 s). The decoder did the same work for every length, so this only shows that the encoder cost is fixed (always 3,000 frames). A clean test needs 30 s of varied speech.
+  - Warm ASR is **0.45 s**, not the ~2 s from the 2026-10-19 n=1 smoke run. ASR is not the main latency cost; the first full sentence (~1.3 s) is.
+
 ## 2026-10-20: Which Kokoro Hindi voice? Blind listening (v3 build 3, half of S0-5)
 - **Question:** which of Kokoro's 4 Hindi voices sounds best for Fryday?
 - **Setup:** `spikes/learn/v3_voice_pick.py`. The same 3 sentences (greeting, a 7:30 time, ₹2.5 लाख and ₹15,999), each passed through `normalise()`, in `hf_alpha`, `hf_beta`, `hm_omega` and `hm_psi`. The files were saved under shuffled letters A–D, with the key hidden until the owner chose. One listener (the owner), n=1, no scores, just a preference.
