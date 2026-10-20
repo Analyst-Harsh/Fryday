@@ -12,6 +12,31 @@ Every result goes here, **including negative ones** (roadmap working principles)
 - **Decision:** what changes because of this (HLD/roadmap update, next step).
 ```
 
+## 2026-10-19: First speech-to-speech turn on the Mac: latency by stage (v3 build 1 skeleton)
+- **Question:** does mic → ASR → LLM → TTS work end to end on the M5, and where does the time go?
+- **Setup:**
+  - M5, 16 GB. `mlx_lm.server` with Qwen3-4B 4-bit (separate process); Whisper large-v3-turbo (mlx-whisper, revision `a4aaeec`, `language="hi"`) and Kokoro-82M (mlx-audio, `hf_alpha`) in-process.
+  - Input: the owner's 3 s F8 recording (`data/audio/f8_16k.wav`) instead of the live mic. Voice system prompt (Devanagari, numbers as words). Sentence chunking, no playback.
+  - n=1 cold + 1 warm run, same input. Script: a scratchpad smoke script over `ASRClient`, `LLMClient`, `TTSClient`, `speak_reply`.
+- **Result:**
+
+  | Run | ASR | LLM first token | First audio (from ASR done) | You stop → Fryday speaks | Reply audio |
+  |---|---|---|---|---|---|
+  | cold | 1.89 s | 8.49 s | 11.28 s | 13.2 s | 10.6 s, 3 sentences |
+  | warm | 2.14 s | 0.09 s | 1.42 s | **3.6 s** | 14.5 s, 3 sentences |
+
+- **Observations:**
+  - **It works end to end**: spoken Devanagari came back, in sentence chunks.
+  - **Cold start is huge** (8.5 s to first token): the server's first request with a new system prompt. `fryday-talk` now warms the LLM (and its prefix cache), Whisper and Kokoro before the first turn.
+  - **ASR is the biggest warm cost** (about 2 s for 3 s of speech). Whisper encodes a padded 30 s window whatever the input length. To investigate in v4.
+  - **First audio waits for the whole first sentence**: about 1.3 s between first token and first audio. Devanagari costs about 3.75 tokens per word (F3), so an 8-word sentence is about 30 tokens. The HLD's short first chunk (~6 words) is the v5 fix, and S0-8 weighs the script choice.
+  - **Quality is weak.** ASR heard "कल सुबह **साथ बज़े** याद **देखे**" for "kal subah 7 baje yaad dilana", and the 4B model's Devanagari Hindi was clumsy and longer than the 1–3 short sentences asked for (10–15 s of audio).
+  - Loading downloaded all 56 Kokoro voices (16 s); now only the configured voice is fetched.
+- **Decision:**
+  - Keep the skeleton; the warm turn (3.6 s stop → speech) is the baseline to beat. HLD target and the budget table come in F9.
+  - v4: measure Whisper latency vs model size and input padding, and WER on the own-voice set.
+  - v5: short first chunk, VAD endpointing, barge-in. Re-measure with live mic and playback.
+
 ## 2026-10-18: Scoring the Kokoro WAVs: predicted MOS vs ASR round trip vs ears (v3 learn 2)
 - **Question:** can automatic metrics replace the owner's listening check, and which one catches the missing "rupaye"?
 - **Setup:**

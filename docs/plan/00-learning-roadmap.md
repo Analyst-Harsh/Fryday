@@ -299,6 +299,8 @@ Each version lists what you **learn** (interview topics), what you **build**, th
 - **Source:** old phase 4.
 
 ### v3: Speech I: voice out
+> **2026-10-19 (owner's choice): a speech-to-speech skeleton was built early, in v3 build 1.** `fryday-talk` (push-to-talk: mic → Whisper → Qwen → Kokoro → speaker) with `asr.py`, `tts.py` and `voice.py` behind seams and tested with fakes. **No learning is cut.** The v4, F9 and v5 learn sessions still happen and go deeper on the pieces already standing (WER, VAD, latency budget, browser). Shortcuts are logged as production gaps #28–30.
+
 - **Learn:**
   - PCM, sample rate, resampling, WAV;
   - TTS pipeline (text → tokens/phonemes → acoustic → vocoder), RTF;

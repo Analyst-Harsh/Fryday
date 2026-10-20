@@ -1,4 +1,4 @@
-.PHONY: sync test lint up down db-check llm chat
+.PHONY: sync test lint up down db-check llm chat talk
 
 sync:
 	uv sync --all-packages
@@ -28,3 +28,7 @@ llm:
 # v0 terminal chat (needs `make llm` running in another terminal)
 chat:
 	uv run fryday-chat
+
+# Push-to-talk voice chat: mic → Whisper → LLM → Kokoro → speaker (needs `make llm`; use headphones)
+talk:
+	uv run fryday-talk
