@@ -96,8 +96,8 @@ Fryday is a Hinglish tap-to-talk voice assistant whose real purpose is **learnin
 1. Tap to start: the browser streams PCM16 16 kHz binary frames, each tagged with `turn_id` and `seq`.
 2. Tap to stop ends the utterance.
 3. Utterance → `asr` → normaliser (in). Empty, low-confidence or no-speech output is dropped, because Whisper hallucinates on silence.
-4. Transcript → `embed` → pgvector top-k memories.
-5. LangGraph → LLM (streaming).
+4. Transcript → `embed` → pgvector top-k memories. *(Added in v2; the first voice build, v5, skips this hop.)*
+5. LangGraph → LLM (streaming). *(In v5 this is a plain LLM stream behind the `reply` seam; the agent arrives in v1, behind the same seam.)*
    - **Tool call:** Pydantic-validate → filler line → MCP.
    - **Invalid call:** one repair attempt using the validation error, then a polite refusal.
 6. Reply tokens → chunks (a short first chunk of ~6 words, then sentences) → normaliser (out) → `tts` → audio emitted **in order** with `turn_id`/`chunk_seq`. The queue is bounded, so backpressure pauses TTS.
@@ -147,14 +147,21 @@ Exact IDs were checked against model cards on 2026-10-04 unless marked *(verify)
 24 GB estimate (a spike, not a fact): ASR ~2 + LLM ~3 + 6 KV cap + TTS ~2–3 + embed ~1.1 + CUDA contexts/Triton overhead ≈ 16–18 GB.
 
 ### 3.1 Text normaliser
-- **Out (before TTS): rules, no model.**
+- **Out (before TTS): normalise at the source, then rules as the safety net (decided 2026-10-16).**
+  - **Layer 1, the reply LLM's prompt:** write numbers, times and amounts as spoken Hinglish words ("saat baje", "do sau pachaas rupaye"). It's free (same generation, no extra latency) and context-aware ("iPhone 7" stays *seven*). A 4-bit 4B model won't comply every time, so it's never the only layer.
+  - **Layer 2, deterministic rules (below):** catch any digits, ₹, times or dates left over. They're golden-tested and never silently wrong, which matters most for amounts and times.
+  - **Layer 3, only if v7a evals show a long-tail problem:** a learned normaliser for rare tokens, kept off the latency-critical path.
+  - Open for v1: on-screen text and tool calls need digits, while speech needs words. Decide then whether the reply carries both forms.
+- **Layer 2 detail: rules, no model.**
   - Rules cover currency, time, date, plain numbers and abbreviations, turning them into Hindi words.
   - NVIDIA NeMo text processing supports Hindi only for *inverse* normalisation (words → numbers). Its Hindi numbers→words support is unverified, so plan a small custom rule set and adopt NeMo only if spike 0 shows it works.
   - Golden unit tests cover every rupee amount and number format.
-- **In (after ASR): the script convention, decided in spike 0.**
-  - Option A: keep Roman Hinglish, which Hinglish ASR models output natively, and transliterate to Devanagari only before TTS.
-  - Option B: fine-tune the ASR to output Devanagari for Hindi words.
-  - Either way, transliteration (e.g. AI4Bharat IndicXlit *(verify)*) is the fallback.
+- **In (after ASR): the script convention. Decided 2026-10-20 (S0-8, EXPERIMENTS).**
+  - **ASR: off-the-shelf Whisper large-v3-turbo with `language="hi"`, which outputs Devanagari.** No fine-tune.
+    - On 100 MUCS clips with matched decoding, it tied with Oriserve's Roman Hinglish fine-tune (median skeleton CER 31.1% vs 31.3%).
+    - It was about 3× faster here, it's already in the stack, and it produced no junk tokens (Oriserve: stray `nan`, Cyrillic).
+  - The script of the ASR **input** barely affects latency: the user's ~10 words are prefill. The 2.5× Devanagari token cost is in the **reply**. Whether replies should be Roman plus transliteration (e.g. AI4Bharat IndicXlit *(verify)*) before TTS is a v5 latency question.
+  - Known gap: Whisper sometimes writes English words in Latin script ("document"). That's harmless for the LLM, but if the reply copies them, Kokoro's Hindi voice misreads them.
 - **Money safety does not depend on TTS:** amounts are always shown as text on the approval card.
 
 ## 4. Learning map
@@ -353,6 +360,8 @@ Exact IDs were checked against model cards on 2026-10-04 unless marked *(verify)
      - Nsight counters.
      - 24 GB fit.
    - **Deferred with real Swiggy:** Builders Club access, and whether real idempotency keys are honoured.
+> **Order changed 2026-10-11:** milestone 2 (voice) is built before milestone 1 (agent and memory). See the learning roadmap §1. The design is unchanged.
+
 1. **Text-only agent on the Mac:** non-spend tools, the mock grocery server with fault modes, approvals plus reconciler, memory, LLM eval harness.
 2. **Voice on the Mac:** ASR + TTS + WebSocket client, end to end.
 3. **LLM LoRA fine-tune** (sprint 1) + quantisation study.

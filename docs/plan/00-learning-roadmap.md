@@ -42,14 +42,18 @@ Sessions are about 1.5 h. "L" is learn sessions, "B" is build sessions, and "I" 
 | F | **Architecture + core theory** (§3), including a tiny GPT built from scratch | 10 | You explain one Fryday turn on your own diagram, and your own mini-GPT generates text |
 
 ### Part A: Build the assistant (Mac)
+> **Re-ordered 2026-10-11 (owner's choice): voice first, then tools.** After v0, the order is F8 → v3 → v4 → F9 → v5 → v1 → v2 → v6. Version numbers keep their names, so links and history stay valid. **Nothing is cut.** Every learn session, resource, learner-writes item, spike and interview stays; only the order changes. The v5 voice bot has no tools; v1 later puts the agent behind v5's `reply` seam, so the voice code doesn't change.
+
 | # | Version | L+B+I | Demo |
 |---|---|---|---|
 | v0 | LLM hosting I: local LLM behind an OpenAI API, streaming, sampling from scratch, quantisation taste | 2+4+1 | Type Hinglish, tokens stream back |
-| v1 | Tool calling, structured output, agent loop, MCP | 2+5+1 | "Remind me at 6…" works |
-| v2 | RAG and memory: embeddings, hybrid search, reranking, RAG metrics; ONNX intro | 2+6+1 | "I'm vegetarian" is recalled the next day |
+| F8 | Sound and speech overview (Foundations session 8) | 1 | Your own voice as a waveform, a spectrogram and a log-mel |
 | v3 | Speech I: audio basics + TTS + text normalisation | 2+4+1 | Fryday speaks |
-| v4 | Speech II: ASR, WER, Hinglish script decision, recording your own-voice test set | 2+5+1 | Speak, get a reply |
-| v5 | Real-time streaming turn: WebSocket, barge-in, VAD endpointing, latency | 3+9+1 | **Hero video:** talk to it in the browser |
+| v4 | Speech II: ASR, WER, Hinglish script decision, recording your own-voice test set | 2+5+1 | Speak, get a spoken reply |
+| F9 | Real-time voice systems (Foundations session 9) | 1 | The latency budget table |
+| v5 | Real-time streaming turn: WebSocket, barge-in, VAD endpointing, latency | 3+9+1 | **Hero video:** talk to the voice chatbot in the browser (no tools yet) |
+| v1 | Tool calling, structured output, agent loop, MCP | 2+5+1 | "Remind me at 6…" works, by voice |
+| v2 | RAG and memory: embeddings, hybrid search, reranking, RAG metrics; ONNX intro | 2+6+1 | "I'm vegetarian" is recalled the next day |
 | v6 | Reliability and safety: the money path | 3+12+1 | "Order milk" gives exactly 1 order under every fault |
 
 ### Part B: Model engineering (Mac): the core interview depth
@@ -72,8 +76,9 @@ Sessions are about 1.5 h. "L" is learn sessions, "B" is build sessions, and "I" 
 | v16 | Interview capstone (§6) | 6 | 3 mock system-design rounds, resume bullets |
 
 **Total:** about **177 sessions**. The default pace is 1.5 h a day, **5 days a week**, which is about 8 months, or about 10 with slip. At 6 days a week it is about 7 months. Along the way:
-- a text assistant runs at about **week 5**;
-- the voice hero video lands at about **week 13**;
+- a text assistant runs at about **week 5** (done: v0);
+- the voice hero video lands about **6 weeks after v0** (30 sessions: F8, v3, v4, F9, v5). It was about 10 weeks before the 2026-10-11 re-order;
+- tools (v1) follow about 2 weeks later;
 - Part B runs from about week 16 to week 26.
 
 **Checkpoint after v6:** Part B is mandatory, because it holds most of the interview depth.
@@ -102,6 +107,7 @@ Sessions are about 1.5 h. "L" is learn sessions, "B" is build sessions, and "I" 
 
 **Why this order:**
 - Build the product first so every later concept has a home.
+- Within Part A, voice comes before tools (owner's choice, 2026-10-11). The voice pipeline is the part the owner most wants to learn and build, and the reply seam lets the agent drop in later without changing the voice code.
 - Measure (v7a) before you change any model (v8–v11).
 - Learn serving on the Mac (v8, v9) before paying for a GPU.
 - Do fine-tuning and quantisation on the Mac first, then repeat at scale on the GPU.
@@ -110,11 +116,11 @@ Sessions are about 1.5 h. "L" is learn sessions, "B" is build sessions, and "I" 
 
 | Spike | Answered in |
 |---|---|
-| S0-3 | v0, v1 |
-| S0-5 | v0, v2, v3, v4 |
+| S0-5 | v0, v3, v4, v2 (embedder ID and licence) |
 | S0-9 | v3 |
 | S0-8 | v3, v4 |
-| S0-2 | v5 |
+| S0-2 | v5; re-run in v2 once the embedder (about 1.1 GB) is loaded |
+| S0-3 | v0, v1 |
 | S0-10 | v6 |
 | S0-1 | v8 |
 | S0-6, 7, 11 | v12 |
@@ -125,8 +131,8 @@ Sessions are about 1.5 h. "L" is learn sessions, "B" is build sessions, and "I" 
 | Milestone | Versions |
 |---|---|
 | M0 | Spikes, as above |
+| M2 | v3, v4, v5 (now built before M1) |
 | M1 | v1, v2, v6, v7a |
-| M2 | v3, v4, v5 |
 | M3 | v10, v11, v13 |
 | M4 | v8, v14 |
 | M5 | v11, v13, v14 |
@@ -193,7 +199,7 @@ Each version adds its own rows as they come up.
 Each version lists what you **learn** (interview topics), what you **build**, the **production** points it adds, and the deep-detail **source** in the old plan.
 
 ### F: Foundations (10 sessions)
-> **Reordered 2026-10-10 (just-in-time learning).** Sessions 1–3 are done. Next comes **7 (hosting)**, then a short checkpoint, then **v0**. Sessions 4–6 (tiny GPT, modern architecture) move to just before **v9**, where attention internals and the KV cache become things you measure. Sessions 8 and 9 (speech, real-time) move to just before **v3** and **v5**. Nothing is cut. The rule from here on: learn depth when the build needs it.
+> **Reordered 2026-10-10 (just-in-time learning).** Sessions 1–3 are done. Next comes **7 (hosting)**, then a short checkpoint, then **v0**. Sessions 4–6 (tiny GPT, modern architecture) move to just before **v9**, where attention internals and the KV cache become things you measure. Sessions 8 and 9 (speech, real-time) move to just before **v3** and **v5**. Since the 2026-10-11 re-order (voice first), that means F8 comes right after v0. Nothing is cut. The rule from here on: learn depth when the build needs it.
 
 1. **The big picture.** Karpathy, *Intro to LLMs*. Claude walks you through architecture doc §1 and §4, and you draw your six-box diagram.
 2. **Neural nets refresher → transformers.** 3Blue1Brown's neural-network and transformer/attention videos. Covers embeddings, attention, MLP, softmax and residuals.
@@ -266,7 +272,7 @@ Each version lists what you **learn** (interview topics), what you **build**, th
   - context engineering (what goes in the window, compaction);
   - **MCP internals** (client/server, tools, resources, transports);
   - agent evals (tool-selection accuracy, trajectory).
-- **Build:** a hand-written agent loop; notes and reminders in Postgres with Alembic; Pydantic validation with one repair attempt; S0-3 measured (at least 18 of 20 streamed tool calls valid).
+- **Build:** a hand-written agent loop, placed behind v5's `reply` seam; notes and reminders as new tables in the existing Alembic setup (from v5); Pydantic validation with one repair attempt; S0-3 measured (at least 18 of 20 streamed tool calls valid). Also, for the voice path: a short spoken "filler line" while a tool runs, and a guarantee that tool-call tokens never reach TTS.
 - **Production:** tool timeouts, an idempotency key on non-spend tools, a single retry.
 - **Source:** old phases 3 and 4.
 
@@ -288,10 +294,13 @@ Each version lists what you **learn** (interview topics), what you **build**, th
   - hybrid retrieval using Postgres full-text search plus vectors;
   - a small reranker;
   - recall@k measured on 30 labelled queries;
-  - the first 30-case tool-call mini eval.
+  - the first 30-case tool-call mini eval;
+  - re-run S0-2 (memory fit) with the embedder loaded, and re-measure the end-to-end voice latency including the memory hop (HLD budget: 80 ms on the Mac).
 - **Source:** old phase 4.
 
 ### v3: Speech I: voice out
+> **2026-10-19 (owner's choice): a speech-to-speech skeleton was built early, in v3 build 1.** `fryday-talk` (push-to-talk: mic → Whisper → Qwen → Kokoro → speaker) with `asr.py`, `tts.py` and `voice.py` behind seams and tested with fakes. **No learning is cut.** The v4, F9 and v5 learn sessions still happen and go deeper on the pieces already standing (WER, VAD, latency budget, browser). Shortcuts are logged as production gaps #28–30.
+
 - **Learn:**
   - PCM, sample rate, resampling, WAV;
   - TTS pipeline (text → tokens/phonemes → acoustic → vocoder), RTF;
@@ -308,7 +317,7 @@ Each version lists what you **learn** (interview topics), what you **build**, th
   - WER and CER;
   - hallucination on silence;
   - the code-switching / script problem.
-- **Build:** a `transcribe(pcm) -> str` seam with `mlx-whisper` and a tap-to-talk CLI. Score Oriserve (Roman) vs Whisper (Devanagari) on MUCS clips with `jiwer`, then **decide the script convention** (S0-8). **Record your 30–60 min own-voice entity test set** (1 session; used later in v7a). Update the HLD if the TTS choice moves away from Magpie.
+- **Build:** a `transcribe(pcm) -> str` seam with `mlx-whisper` and a tap-to-talk CLI. Score Oriserve (Roman) vs Whisper (Devanagari) on MUCS clips with `jiwer`, then **decide the script convention** (S0-8). **Record your 30–60 min own-voice entity test set** (1 session; used later in v7a). *(2026-10-20: S0-8 decided, Devanagari via Whisper. The owner chose not to record an own-voice set; v7a will use public sets plus synthetic entity clips.)* Update the HLD if the TTS choice moves away from Magpie.
 - **Source:** old phase 7.
 
 ### v5: Real-time streaming turn
@@ -325,17 +334,22 @@ Each version lists what you **learn** (interview topics), what you **build**, th
   - streaming-ASR chunking as a concept.
 - **Build:**
   - a FastAPI WebSocket gateway (token auth in the first message, Origin check, protocol `v` field);
+  - measure reply script vs first audio: Devanagari replies vs Roman replies plus transliteration before TTS (left over from S0-8, 2026-10-20);
   - a turn manager and a thin JS mic client;
   - per-hop spans;
   - the full memory-fit run (S0-2), with early RSS checks already done in v3 and v4 as each model was added;
-  - **Silero VAD endpointing** as an optional hands-free mode (tap-to-talk stays the default), with the end-of-speech threshold measured.
+  - **Silero VAD endpointing** as an optional hands-free mode (tap-to-talk stays the default), with the end-of-speech threshold measured;
+  - a `reply(history) -> AsyncIterator[ReplyEvent]` seam over `LLMClient.stream()` (text deltas now; v1 adds tool and filler events behind it);
+  - the database baseline: Postgres driver and pool, Alembic with the first migration (the per-user daily minute-cap table), forward-only migrations with a rollback note.
 - **Production:**
   - readiness/health endpoints;
   - graceful shutdown;
   - a bounded queue;
   - a concurrency limit and load shedding;
   - a per-user daily minute cap;
-  - a circuit breaker with a "GPU offline" degrade message.
+  - a circuit breaker with a "GPU offline" degrade message;
+  - readiness fails when Postgres is down (HLD §9).
+- **Known limitation:** the v5 voice bot has no tools, so "I'll remind you" is only talk until v1 (production gap #27).
 - **Source:** old phase 8.
 
 ### v6: Reliability and safety (money path)
@@ -397,7 +411,8 @@ Each version lists what you **learn** (interview topics), what you **build**, th
   - KServe v2 protocol;
   - Triton model repo, `config.pbtxt`, backends (ONNX, Python), dynamic batching, instance groups, ensembles, metrics;
   - gRPC streaming and cancellation;
-  - warm-up and readiness.
+  - warm-up and readiness;
+  - request priority with batching: Triton `priority_levels` and queue policies (timeouts, max queue size), and why voice wants earliest-deadline-first (deadline = when the user's playback buffer runs dry; first chunks have none). Added 2026-10-20 from the v3 design question.
 - **Build:**
   - Arm64 CPU Triton (S0-1) gets a **1-session timebox**; if it fails, ORT goes behind the same contract.
   - Embeddings, ASR and **TTS (Python backend)** go behind KServe v2.
@@ -407,6 +422,7 @@ Each version lists what you **learn** (interview topics), what you **build**, th
     - Cap the Docker VM at 4 GB or less.
   - Swap the seams; contract tests pass against both.
   - Measure warm-up and cold start.
+  - Try TTS with `priority_levels: 2` (first chunk high, later chunks low) and compare first-audio p95 against FIFO under a small concurrent load.
   - Note in the gaps register that dynamic batching on CPU won't show GPU batching behaviour; that is revisited in v14.
   - Nemotron streaming ASR as a stretch.
 - **Source:** old phases 2 and 7, HLD §10.

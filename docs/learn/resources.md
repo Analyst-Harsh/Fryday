@@ -20,7 +20,11 @@ These are video-first and ordered by roadmap version.
 | | [Jay Alammar: The Illustrated Transformer](https://jalammar.github.io/illustrated-transformer/) | blog | 40 min |
 | | [HF: Chat templates](https://huggingface.co/docs/transformers/chat_templating) | docs | 25 min |
 | | [Tiktokenizer](https://tiktokenizer.vercel.app) (paste text, see the tokens) | tool | 10 min |
-| | [HF Audio Course, ch.1: Audio data](https://huggingface.co/learn/audio-course/chapter1/audio_data) | course | 30 min |
+| ⭐ | F8: [Valerio Velardo: Understanding Audio Signals for Machine Learning](https://www.youtube.com/watch?v=daB9naGBVv4) | video | — |
+| ⭐ | F8: [3Blue1Brown: But what is the Fourier Transform? A visual introduction](https://www.youtube.com/watch?v=spUNpyF58BY) | video | — |
+| ⭐ | F8: [Valerio Velardo: Mel Spectrograms Explained Easily](https://www.youtube.com/watch?v=9GHCiiDLHQ4) | video | — |
+| | F8: [TechnoTony: PCM, sample rate and bit depth explained](https://www.youtube.com/watch?v=YPHs1boxWHk) · [Velardo: Audio Signal Processing for ML](https://www.youtube.com/watch?v=iCwMQJnKk2c) (series intro) | video | optional |
+| | [HF Audio Course, ch.1: Audio data](https://huggingface.co/learn/audio-course/chapter1/audio_data) (written recap with code, after the F8 videos) | course | 30 min |
 | | [Pipecat docs](https://docs.pipecat.ai) · [LiveKit Agents docs](https://docs.livekit.io/agents/) (concept pages) | docs | 45 min each |
 
 ## v0: LLM hosting I

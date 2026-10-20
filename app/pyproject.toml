@@ -5,15 +5,22 @@ description = "Fryday app service (FastAPI gateway, agent, memory, backends)"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "httpx2>=2.13.1",
+    "huggingface-hub>=0.30",
     "langfuse>=4.17",
+    "misaki[en]>=0.9 ; sys_platform == 'darwin'",
+    "mlx-audio>=0.5.9,<0.6 ; sys_platform == 'darwin'",
+    "mlx-whisper>=0.4.3,<0.5 ; sys_platform == 'darwin'",
+    "numpy>=2",
     "openai>=3.28.0",
     "opentelemetry-api>=1.45.1",
     "pydantic-settings>=2.15.0",
+    "sounddevice>=0.5",
     "structlog>=26.1.0",
 ]
 
 [project.scripts]
 fryday-chat = "fryday.cli:main"
+fryday-talk = "fryday.talk:main"
 
 [build-system]
 requires = ["uv_build>=0.11,<0.12"]

@@ -28,6 +28,32 @@ class Settings(BaseSettings):
     llm_top_k: int = Field(default=20, ge=0)  # 0 = no top-k filter
     llm_max_tokens: int = Field(default=512, ge=1)
 
+    # TTS: Kokoro-82M (Apache-2.0) via mlx-audio, pinned. Input must be Devanagari for
+    # Hindi (EXPERIMENTS 2026-10-16). lang "h" = Hindi G2P, "a" = US English.
+    tts_model: str = "mlx-community/Kokoro-82M-bf16"
+    tts_revision: str = "a71e4d38b236d968966a2002c4c895dbd12b1c3c"
+    tts_voice: str = "hf_alpha"  # chosen blind by ear (EXPERIMENTS 2026-10-20)
+    tts_lang: str = "h"
+
+    # ASR: Whisper large-v3-turbo (MIT) via mlx-whisper, pinned. "hi" forces Hindi, so
+    # Hinglish comes back in Devanagari instead of being guessed as English or Urdu.
+    asr_model: str = "mlx-community/whisper-large-v3-turbo"
+    asr_revision: str = "a4aaeec0636e6fef84abdcbe3544cb2bf7e9f6fb"
+    asr_language: str = "hi"
+
+    # Voice mode (fryday-talk): the reply is spoken by Kokoro, which needs Devanagari
+    # and can't say digits or ₹ correctly (EXPERIMENTS 2026-10-16). This prompt is
+    # layer 1 of the output normaliser (HLD §3.1); the rules layer comes in v3 build 2.
+    voice_system_prompt: str = (
+        "You are Fryday, a helpful voice assistant. Your reply is spoken aloud. "
+        # No topical examples: a 4B model treats "gym → जिम" as something to talk about.
+        "Reply in short, friendly Hinglish written only in Devanagari script, including "
+        "English words. Write every number, time and amount as Hindi words, never digits "
+        "or symbols. "
+        "Use one to three short sentences. No emojis, faces, lists or markdown. "
+        "You cannot perform any actions yet; say so if asked."
+    )
+
     # None = auto: pretty logs in a terminal, JSON otherwise. true forces JSON.
     log_json: bool | None = None
 
