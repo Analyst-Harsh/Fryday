@@ -42,6 +42,36 @@ flowchart LR
 
 ---
 
+### 2026-10-20: v3 builds 1–3 and v4 learn 1 + S0-8 build (long day)
+- **Built or watched:**
+  - **v3 build 1** (2026-10-19): the speech-to-speech skeleton `make talk`: push-to-talk → Whisper → streamed Qwen → sentence chunks → Kokoro → speaker thread. Walkthroughs of `talk.py`, `asr.py`, `tts.py` and `voice.py`: the PortAudio callback thread, queue + sentinel + `task_done`, daemon threads, `yield from`, sentence chunking. Removed the topical examples from the voice prompt (the model kept talking about the gym).
+  - **v3 build 2:** `normalise.py` with 21 golden tests (₹, times, decimals, Indian commas). Found that misaki's Hindi path is just espeak-ng, which reads plain numbers well, so the rules only fix what espeak breaks.
+  - **v3 build 3:** a blind voice pick from 4 Hindi voices.
+  - **v3 interview, partial:** the design question only (TTS for 10k users), plus priority queues / EDF scheduling (added to v8).
+  - **v4 learn 1:** HF Audio Course ch.5; hops, frames and log-mel; Whisper's 30 s window and long-form sliding; toy `v4_asr_toy.py`.
+  - **v4 build:** `v4_script_eval.py`, Whisper (Devanagari) vs Oriserve (Roman) on 100 MUCS clips.
+- **Predicted vs actual:**
+  - Voice: predicted `hf_beta`, picked `hf_alpha` blind.
+  - 3 s vs 30 s ASR time: predicted the same, and it was (0.45 s), but the test was confounded (Whisper drops repeated speech).
+  - Silence: predicted invented words, and got "झाल झाल".
+  - S0-8: predicted Whisper wins. It won 66/29, then **tied** once Oriserve got the same loop guard.
+- **Surprised me:**
+  - Our "ASR ≈ 2 s" figure was wrong: warm ASR is 0.45 s. The first full sentence (~1.3 s) is the real wait.
+  - Python's `\b` doesn't treat Hindi vowel signs as letters, so `बजे\b` never matched.
+  - A 16-point model gap was mostly our evaluation harness (no temperature fallback), not the model.
+  - The token cost of Devanagari matters in the reply, not the ASR input.
+- **I can now explain:**
+  - how the speech loop overlaps (TTS of sentence 2 runs while sentence 1 plays);
+  - why rules, not models, normalise money;
+  - production TN (tagger plus verbaliser, WFST);
+  - hop, window and 100 frames per second;
+  - Whisper's sliding window for long audio;
+  - dynamic vs continuous batching;
+  - EDF priority for first audio chunks;
+  - why fine-tunes can lose to base models.
+- **Still don't get:** quiz skipped (owner's choice). No new re-ask rows.
+- **Tomorrow's first step:** F9, real-time voice systems: cascaded vs speech-to-speech, and the latency budget table filled with Fryday's measured numbers.
+
 ### 2026-10-18: v3 learn 2: judging TTS quality, and codecs
 - **Built or watched:**
   - Reading (no strong video exists): HF Audio Course ch.6 evaluation; Wikipedia on MOS and on Opus; the SpeechMOS README.
