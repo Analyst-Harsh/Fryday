@@ -42,6 +42,20 @@ flowchart LR
 
 ---
 
+### 2026-10-21: v5 learn 3: turn detection, tail latency, admission control
+- **Built or watched:** live explanation only.
+  - VAD's four knobs (threshold, min speech, min silence, prefix padding) and how they trade cut-offs against latency;
+  - VAD + Smart Turn for endpointing and barge-in;
+  - p50 vs p95 (mean 1,440 vs p50 1,075 vs p95 4,800 on 10 turns) and where tails come from;
+  - admission control: concurrency limit, load shedding, bounded queues with timeouts, per-user caps, circuit breaker.
+- **Predicted vs actual:** no predictions.
+- **I can now explain:**
+  - why min silence is the biggest latency knob and why Smart Turn exists;
+  - why SLOs use p95;
+  - why rejecting fast under overload beats serving everyone slowly.
+- **Still don't get:** no quiz (owner's choice).
+- **Tomorrow's first step:** v5 build 1, the short first chunk.
+
 ### 2026-10-21: v5 learn 1–2: asyncio, cancellation, and getting audio over the network
 - **Built or watched:**
   - Corey Schafer's AsyncIO video (most of it).
