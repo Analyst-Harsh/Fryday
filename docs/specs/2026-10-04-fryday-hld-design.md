@@ -140,7 +140,7 @@ Exact IDs were checked against model cards on 2026-10-04 unless marked *(verify)
 |---|---|---|---|---|
 | ASR | `openai/whisper-large-v3-turbo` (MIT); `Oriserve/Whisper-Hindi2Hinglish-Apex` (Apache-2.0, outputs Roman Hinglish), `…-Prime` as the alternative; streaming-native: `nvidia/nemotron-3.5-asr-streaming-0.6b` (OpenMDW, ungated, Hindi included) | LoRA for named entities; quantise | CT2 int8 or ONNX (Python/ORT backend) | CT2 fp16/int8 via the Triton **Python backend** (no official CT2 backend); TensorRT-LLM Whisper encoder as an experiment |
 | LLM | `Qwen/Qwen3-4B-Instruct-2507` (Apache-2.0, ungated) as the default; any newer **ungated** 2026 3–4B release with tool calling may join the baseline | LoRA SFT for tool calls and spoken Hinglish; merge; 4-bit | MLX 4-bit via `mlx_lm.server` (OpenAI-compatible, streaming; tool-call parsing per model and streaming+tools **unverified** → spike S0-3; validate-and-repair) | vLLM AWQ/GPTQ (verify on L4) |
-| TTS | `nvidia/magpie_tts_multilingual_357m` (NVIDIA Open Model License, ungated, Hindi; batched/sliding-window synthesis, **not** native streaming) as the default; fallback `facebook/mms-tts-hin` *(licence verify)* | Fix one voice; no fine-tuning in v1 | PyTorch/NeMo in the Triton Python backend | Same, as chunked unary calls; ONNX/TRT is a stretch (unproven) |
+| TTS | **`hexgrad/Kokoro-82M`** (Apache-2.0) via `mlx-community/Kokoro-82M-bf16`, voice `hf_alpha`, Devanagari input (decided in v3, 2026-10-16/20, EXPERIMENTS). Alternative for the GPU stage: `nvidia/magpie_tts_multilingual_357m` (NVIDIA Open Model License, Hindi; batched/sliding-window, **not** native streaming); fallback `facebook/mms-tts-hin` *(licence verify)* | Fix one voice; no fine-tuning in v1 | PyTorch/NeMo in the Triton Python backend | Same, as chunked unary calls; ONNX/TRT is a stretch (unproven) |
 | Embeddings | `BAAI/bge-m3` (MIT); fallback `intfloat/multilingual-e5-small` (MIT) on the Mac | None; chosen as the easy TensorRT target | ONNX | TensorRT fp16 |
 | VAD (later) | Silero VAD (MIT) | — | CPU | — |
 
@@ -397,6 +397,7 @@ Exact IDs were checked against model cards on 2026-10-04 unless marked *(verify)
 - **Nsight counters** need SYS_ADMIN.
 - **Ungated models:**
   - Qwen3-4B-Instruct-2507 (Apache-2.0).
+  - Kokoro-82M (Apache-2.0), the TTS in use since v3.
   - Magpie multilingual 357M (NVIDIA Open Model License).
   - Whisper large-v3-turbo (MIT).
   - Oriserve Whisper Hindi2Hinglish Apex/Prime (Apache-2.0).
