@@ -12,6 +12,22 @@ Every result goes here, **including negative ones** (roadmap working principles)
 - **Decision:** what changes because of this (HLD/roadmap update, next step).
 ```
 
+## 2026-10-21: Short first chunk: TTS starts on the first clause or ~6 words (v5 build 1)
+- **Question:** F9 showed sentence aggregation is 68% of first token → first audio. How much does cutting the first chunk early save?
+- **Setup:** `app/src/fryday/voice.py` with `FIRST_CHUNK_MIN_WORDS=3` and `FIRST_CHUNK_MAX_WORDS=6`. It cuts at `,;:` after 3 or more words, otherwise after 6 words, and never next to a digit or ₹. Only the first chunk is affected. Measured with `spikes/learn/f9_budget.py` (medians), Qwen3-4B 4-bit via MLX plus Kokoro-82M on the M5.
+- **Result:**
+
+  | | Before | After |
+  |---|---|---|
+  | Aggregation | 844 ms | 519 ms |
+  | Kokoro (first chunk) | 397 ms | 297 ms |
+  | First token → first audio | 1,241 ms | **816 ms** (−34%) |
+
+  - Kokoro is faster too, because a shorter chunk means less audio to synthesise.
+  - The whole turn now fits a budget of about 1.6 s.
+  - **Not ear-tested.** Whether a 6-word cut sounds choppy is unverified, and the owner skipped the check.
+- **Decision:** keep the early cut. Re-check how it sounds when the hands-free loop (v5 build 2) is used for real.
+
 ## 2026-10-21: asyncio pipeline toy: backpressure, barge-in, and the blocking trap (v5 learn 1)
 - **Question:** in an async voice pipeline, how fast does barge-in stop the audio, and what does a blocking model call do to the event loop?
 - **Setup:** `spikes/learn/v5_asyncio_toy.py`, all fakes:

@@ -14,14 +14,45 @@ from dataclasses import dataclass
 # ponytail: abbreviations ("Dr. Rao") split early; fine for spoken replies.
 _SENTENCE_END = re.compile(r"(?<=[।?!.])\s+|\n+")
 
+# Short first chunk (HLD §2 step 6): waiting for the whole first sentence was 68% of
+# first-token → first-audio, ~105 ms per Devanagari word (EXPERIMENTS 2026-10-21).
+FIRST_CHUNK_MIN_WORDS = 3  # cut at a comma only after this many words
+FIRST_CHUNK_MAX_WORDS = 6  # otherwise cut after this many
+_COMPLETE_WORD = re.compile(r"\S+(?=\s)")  # a word with a space after it can't still grow
+_NUMBER = re.compile(r"[\d₹]")
+
+
+def _first_chunk_end(buffer: str) -> int | None:
+    """Where to cut the first chunk early, or None to keep waiting."""
+    prev = ""
+    for n, match in enumerate(_COMPLETE_WORD.finditer(buffer), start=1):
+        word = match.group()
+        # Never cut next to a number: "₹2.5 | लाख" or "₹250 | रुपये" breaks the normaliser.
+        near_number = bool(_NUMBER.search(word) or _NUMBER.search(prev))
+        prev = word
+        if near_number:
+            continue
+        if (n >= FIRST_CHUNK_MIN_WORDS and word[-1] in ",;:") or n >= FIRST_CHUNK_MAX_WORDS:
+            return match.end()
+    return None
+
 
 def sentences(deltas: Iterable[str]) -> Generator[str, None, None]:
-    """Regroup streamed text deltas into whole sentences, each yielded as soon as it ends."""
+    """Regroup streamed text deltas into speakable chunks, each yielded as soon as it ends.
+
+    The first chunk is cut early (a clause or ~6 words) so TTS can start; the rest are
+    whole sentences, which sound more natural.
+    """
     buffer = ""
+    first = True
     for delta in deltas:
         buffer += delta
         *done, buffer = _SENTENCE_END.split(buffer)  # the last part may still be growing
-        yield from (s.strip() for s in done if s.strip())
+        if first and not done and (cut := _first_chunk_end(buffer)) is not None:
+            done, buffer = [buffer[:cut]], buffer[cut:]
+        chunks = [s.strip() for s in done if s.strip()]
+        first = first and not chunks
+        yield from chunks
     if buffer.strip():
         yield buffer.strip()  # the reply ended without a closing space
 

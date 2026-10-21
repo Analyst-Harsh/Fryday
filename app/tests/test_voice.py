@@ -36,6 +36,43 @@ def test_each_sentence_is_yielded_before_the_rest_of_the_reply_arrives() -> None
     assert pulled == ["एक। "]  # the space after "।" arrived with it: nothing more was read
 
 
+def words(text: str) -> list[str]:
+    """Stream text the way the LLM does: one word (plus its space) per delta."""
+    return [w + " " for w in text.split()]
+
+
+def test_first_chunk_is_cut_after_six_words_when_there_is_no_break() -> None:
+    # The first audio waits only for 6 words, not the whole sentence (EXPERIMENTS 2026-10-21).
+    reply = "मैं आपको कल सुबह सात बजे याद दिला दूँगा। ठीक है?"
+    assert list(sentences(words(reply))) == [
+        "मैं आपको कल सुबह सात बजे",
+        "याद दिला दूँगा।",
+        "ठीक है?",
+    ]
+
+
+def test_first_chunk_is_cut_at_a_comma_after_three_words() -> None:
+    reply = "आज मौसम बादलों में था, ठंढा लग रहा है। कल धूप होगी।"
+    assert list(sentences(words(reply))) == [
+        "आज मौसम बादलों में था,",
+        "ठंढा लग रहा है।",
+        "कल धूप होगी।",
+    ]
+
+
+def test_short_first_sentence_is_not_cut() -> None:
+    assert list(sentences(words("हाँ, मैं यह कर सकता हूँ। बताओ।"))) == [
+        "हाँ, मैं यह कर सकता हूँ।",
+        "बताओ।",
+    ]
+
+
+def test_first_chunk_never_splits_an_amount_from_its_unit() -> None:
+    # "₹2.5 | लाख" would make the normaliser say "ढाई रुपये… लाख": a wrong amount.
+    reply = "इस फ़ोन की कीमत ₹2.5 लाख रुपये है, जो काफ़ी ज़्यादा है।"
+    assert next(sentences(words(reply))) == "इस फ़ोन की कीमत ₹2.5 लाख रुपये"
+
+
 def test_speak_reply_speaks_each_sentence_and_plays_in_order() -> None:
     spoken: list[str] = []
     played: list[bytes] = []
