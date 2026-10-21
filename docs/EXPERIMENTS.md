@@ -12,6 +12,34 @@ Every result goes here, **including negative ones** (roadmap working principles)
 - **Decision:** what changes because of this (HLD/roadmap update, next step).
 ```
 
+## 2026-10-21: asyncio pipeline toy: backpressure, barge-in, and the blocking trap (v5 learn 1)
+- **Question:** in an async voice pipeline, how fast does barge-in stop the audio, and what does a blocking model call do to the event loop?
+- **Setup:** `spikes/learn/v5_asyncio_toy.py`, all fakes:
+  - an LLM producing a word every 30 ms → chunker → TTS (200 ms `time.sleep` standing in for Kokoro) → audio queue (`maxsize=1`) → speaker (1 s per chunk);
+  - a mic ticking every 50 ms;
+  - barge-in at 1.4 s (moved from 1.0 s so it lands during a TTS call).
+  - Run A: TTS via `asyncio.to_thread`. Run B: TTS called directly.
+- **Prediction (owner):** audio stops after the current TTS call finishes.
+- **Result:**
+
+  | | A: `to_thread` | B: direct (blocking) |
+  |---|---|---|
+  | Mic stalls | none | ~230 ms on every TTS call (4×) |
+  | Barge-in timer | 1 ms late | **134 ms late** |
+  | Audio stops after `cancel()` | 0.5 ms | 0.1 ms (but the cancel itself came late) |
+  | TTS thread after cancel | kept running 140 ms; result discarded | — |
+  | Backpressure (queue full, TTS waits) | yes, at 0.74 s | yes |
+  | Queued chunks left to drop | 1 | 1 |
+
+- **Findings:**
+  - With `to_thread`, cancellation hits the task at its `await`, so the audio stops instantly. The prediction was wrong here.
+  - The **thread can't be cancelled**: the compute finishes and is wasted (GPU time the next reply waits for).
+  - A direct blocking call freezes the whole loop. The mic and VAD are starved, and barge-in is noticed late; there, the prediction is exactly right.
+- **Decision for v5:**
+  - Every in-process model call (Whisper, Kokoro, VAD) goes through `to_thread`.
+  - On barge-in, cancel the reply task **and** drop the queued audio.
+  - Keep TTS chunks short to limit orphaned compute.
+
 ## 2026-10-21: Where does "first token → first audio" go? The latency budget (F9 toy)
 - **Question:** of the ~1.3 s between the LLM's first token and the first audio, how much is waiting for the first full sentence and how much is Kokoro?
 - **Setup:**
