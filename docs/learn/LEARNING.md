@@ -42,6 +42,32 @@ flowchart LR
 
 ---
 
+### 2026-10-21: v5 learn 1–2: asyncio, cancellation, and getting audio over the network
+- **Built or watched:**
+  - Corey Schafer's AsyncIO video (most of it).
+  - Live explanations:
+    - event loop, tasks, `asyncio.Queue` and backpressure, cooperative cancellation;
+    - why `async def` doesn't make compute non-blocking (`to_thread`, or a model server, instead);
+    - TCP vs UDP head-of-line blocking; WebSocket vs WebRTC; jitter buffers; echo cancellation.
+  - Toy `spikes/learn/v5_asyncio_toy.py` (EXPERIMENTS 2026-10-21).
+- **Predicted vs actual:**
+  - Predicted audio stops after the current TTS call. With `to_thread` it stopped in 0.5 ms, but the thread's compute ran on for 140 ms.
+  - With a blocking call, barge-in was 134 ms late and the mic stalled ~230 ms per call.
+- **Surprised me:**
+  - Cancelling a task doesn't cancel its thread.
+  - For live voice, late audio is worse than lost audio.
+- **I can now explain:**
+  - concurrency vs parallelism;
+  - where a coroutine gives up control;
+  - backpressure with bounded queues;
+  - what `cancel()` really does;
+  - why WebSocket is fine on localhost but WebRTC is right for real networks;
+  - jitter buffer trade-offs (smoothness vs latency);
+  - how AEC stops Fryday interrupting itself;
+  - why `turn_id` lets the client drop stale audio.
+- **Still don't get:** no quiz (owner's choice).
+- **Tomorrow's first step:** v5 learn 3, VAD and turn detection in depth, p50 vs p95, admission control.
+
 ### 2026-10-21: F session 9 (learn): real-time voice systems
 - **Built or watched:**
   - [Voice AI & Voice Agents: An Illustrated Primer](https://voiceaiandvoiceagents.com/), sections 4, 5.1, 5.7, 5.8 and 5.9.
