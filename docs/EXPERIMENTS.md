@@ -12,6 +12,16 @@ Every result goes here, **including negative ones** (roadmap working principles)
 - **Decision:** what changes because of this (HLD/roadmap update, next step).
 ```
 
+## 2026-10-21: Silero VAD hands-free endpointing: min silence 300 vs 500 vs 800 ms (v5 build 2, partial)
+- **Question:** what minimum silence ends a turn without cutting Hinglish sentences at a thinking pause?
+- **Setup:** `silero-vad` 6.2.3 via `VADIterator` (threshold 0.5, silence below 0.35, 100 ms padding), 512-sample (32 ms) frames at 16 kHz from `sd.RawInputStream(blocksize=512)`. Run with `FRYDAY_HANDS_FREE=1 FRYDAY_VAD_MIN_SILENCE_MS=… make talk`. Planned protocol: 5 fixed sentences, each with a deliberate pause, at each threshold.
+- **Prediction (owner):** 2 of 5 cut off at 300 ms; 500 ms wins.
+- **Result:**
+  - Silero costs **0.46 ms per 32 ms frame** on the M5 CPU (≈ 1.4% of real time); the model loads in 28 ms.
+  - **300 ms sometimes cuts sentences in the middle** (owner's run, qualitative). Counts weren't recorded, and 500 and 800 ms weren't run.
+  - From the source: at a 500 ms setting, `end` fires about **544 ms** after the silence begins (17 quiet frames), plus model fade. The voice-to-voice readout adds the nominal 500 ms, so it understates by about 50–100 ms.
+- **Decision:** keep **500 ms** as the default, not yet measured. Re-run the 5-sentence protocol at 500 and 800 ms when barge-in lands. Semantic turn detection is production gap #32.
+
 ## 2026-10-21: Short first chunk: TTS starts on the first clause or ~6 words (v5 build 1)
 - **Question:** F9 showed sentence aggregation is 68% of first token → first audio. How much does cutting the first chunk early save?
 - **Setup:** `app/src/fryday/voice.py` with `FIRST_CHUNK_MIN_WORDS=3` and `FIRST_CHUNK_MAX_WORDS=6`. It cuts at `,;:` after 3 or more words, otherwise after 6 words, and never next to a digit or ₹. Only the first chunk is affected. Measured with `spikes/learn/f9_budget.py` (medians), Qwen3-4B 4-bit via MLX plus Kokoro-82M on the M5.

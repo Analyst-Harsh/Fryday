@@ -1,19 +1,23 @@
 """Talk to Fryday: push-to-talk voice chat in the terminal (mic → ASR → LLM → TTS → speaker).
 
-Run the model server first (`make llm`), then `make talk`. Use headphones: there is
-no echo cancellation. VAD endpointing, barge-in and the browser come in v5.
+Run the model server first (`make llm`), then `make talk`, or `FRYDAY_HANDS_FREE=1 make talk`
+to end each turn on silence (Silero VAD) instead of Enter. Use headphones: there is
+no echo cancellation. Barge-in and the browser come later in v5.
 """
 
 import queue
 import threading
 import time
 import uuid
-from collections.abc import Iterator
+from collections import deque
+from collections.abc import Callable, Iterable, Iterator
+from typing import cast
 
 import numpy as np
 import openai
 import sounddevice as sd
 import structlog
+from silero_vad import VADIterator, load_silero_vad
 from structlog.contextvars import bind_contextvars, clear_contextvars
 
 from fryday.asr import SAMPLE_RATE, ASRClient
@@ -36,6 +40,11 @@ from fryday.voice import speak_reply
 log = structlog.stdlib.get_logger(__name__)
 MIN_SPEECH_S = 0.3  # shorter than this is a stray key press, not speech
 SILENT_PEAK = 100  # of 32767 (about -50 dBFS): macOS records pure zeros without mic permission
+VAD_FRAME = 512  # samples (32 ms at 16 kHz): the only frame size Silero accepts at 16 kHz
+VAD_PAD_MS = 100  # kept before and after speech so first and last syllables aren't clipped
+MAX_UTTERANCE_S = 30  # hands-free stops here even if the VAD never hears silence
+# Frames kept while waiting for speech: Silero's start reaches back the pad plus one frame.
+PRE_SPEECH_FRAMES = VAD_PAD_MS * SAMPLE_RATE // 1000 // VAD_FRAME + 2
 
 
 def record_until_enter() -> bytes:
@@ -49,6 +58,58 @@ def record_until_enter() -> bytes:
     with sd.RawInputStream(samplerate=SAMPLE_RATE, channels=1, dtype="int16", callback=on_audio):
         input("🎙  listening… press Enter to stop ")
     return b"".join(frames)
+
+
+def endpoint(
+    frames: Iterable[np.ndarray], vad: Callable[[np.ndarray], dict[str, int | float] | None]
+) -> bytes:
+    """Cut one utterance out of a stream of VAD_FRAME-sample int16 frames, from the
+    VAD's start event to its end event (sample indices, padding included)."""
+    audio: deque[np.ndarray] = deque()
+    dropped = 0  # samples trimmed off the front while idle; VAD indices count them
+    start: int | None = None  # index into `audio`, not the VAD's turn-wide count
+    for frame in frames:
+        audio.append(frame)
+        event = vad(frame) or {}
+        if "start" in event:
+            start = max(0, int(event["start"]) - dropped)
+        if start is None:
+            if len(audio) > PRE_SPEECH_FRAMES:  # idle: memory stays flat however long we wait
+                audio.popleft()
+                dropped += VAD_FRAME
+            continue
+        end = int(event["end"]) - dropped if "end" in event else None
+        if end is None and len(audio) * VAD_FRAME - start >= MAX_UTTERANCE_S * SAMPLE_RATE:
+            end = len(audio) * VAD_FRAME  # never heard an end (TV, fan): send what we have
+        if end is not None:
+            return np.concatenate(audio)[start:end].tobytes()
+    return b""
+
+
+def record_until_silence(model: object, min_silence_ms: int) -> bytes:
+    """Record from the mic until Silero VAD hears speech and then min_silence_ms of silence."""
+    chunks: queue.Queue[bytes] = queue.Queue()
+
+    def on_audio(data: memoryview, _frames: int, _time: object, _status: object) -> None:
+        chunks.put(bytes(data))  # PortAudio's thread; Queue is thread-safe
+
+    def frames() -> Iterator[np.ndarray]:
+        while True:
+            yield np.frombuffer(chunks.get(), dtype="<i2")
+
+    # A fresh iterator per turn resets the model's state and the sample counter.
+    vad = VADIterator(
+        model,
+        sampling_rate=SAMPLE_RATE,
+        min_silence_duration_ms=min_silence_ms,
+        speech_pad_ms=VAD_PAD_MS,
+    )
+    with sd.RawInputStream(
+        samplerate=SAMPLE_RATE, channels=1, dtype="int16", blocksize=VAD_FRAME, callback=on_audio
+    ):
+        print("🎙  listening… just speak, and pause to send ")
+        # VADIterator turns the float32 array into a tensor itself.
+        return endpoint(frames(), lambda f: vad(f.astype(np.float32) / 32768))
 
 
 class Speaker:
@@ -116,16 +177,27 @@ def main() -> None:
         print("Model server unreachable or too slow. Run `make llm` and wait until it's loaded.")
         return
     speaker = Speaker(tts.sample_rate)
+    # Silero ships untyped; the model is only handed back to its own VADIterator.
+    vad_model = cast(object, load_silero_vad()) if settings.hands_free else None
+    # Hands-free, the turn only ends after this much silence: part of the user's wait.
+    vad_wait_s = settings.vad_min_silence_ms / 1000 if vad_model else 0.0
 
     history: list[Message] = [{"role": "system", "content": settings.voice_system_prompt}]
     session_id = uuid.uuid4().hex
-    print("Fryday voice — use headphones. Enter to talk, Ctrl-D quits.")
+    if vad_model:
+        print(f"Fryday voice, hands-free ({settings.vad_min_silence_ms} ms). Ctrl-C quits.")
+    else:
+        print("Fryday voice — use headphones. Enter to talk, Ctrl-D quits.")
 
     try:
         while True:
             try:
-                input("\n⏎  press Enter and speak ")
-                pcm = record_until_enter()
+                if vad_model:
+                    print()
+                    pcm = record_until_silence(vad_model, settings.vad_min_silence_ms)
+                else:
+                    input("\n⏎  press Enter and speak ")
+                    pcm = record_until_enter()
             except (EOFError, KeyboardInterrupt):
                 print()
                 return
@@ -176,12 +248,14 @@ def main() -> None:
                     "llm_first_token_s": _round(reply.first_token_s),
                     "first_audio_s": _round(reply.first_audio_s),
                     "speech_in_s": round(len(pcm) / 2 / SAMPLE_RATE, 2),
+                    "vad_wait_s": vad_wait_s,
                 }
                 record(turn, output=reply.text, metadata=stats)
                 log.info("voice_turn", **stats)
-                heard_s = asr_s + (reply.first_audio_s or 0)
+                heard_s = vad_wait_s + asr_s + (reply.first_audio_s or 0)
                 print(
-                    f"        ⏱  ASR {asr_s:.2f} s → first token +{_ms(reply.first_token_s)}"
+                    f"        ⏱  silence {_ms(vad_wait_s)} → ASR {asr_s:.2f} s"
+                    f" → first token +{_ms(reply.first_token_s)}"
                     f" → first audio +{_ms(reply.first_audio_s)}"
                     f"  (you stop talking → Fryday speaks: {heard_s:.2f} s)"
                 )
