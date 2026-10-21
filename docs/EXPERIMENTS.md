@@ -12,6 +12,43 @@ Every result goes here, **including negative ones** (roadmap working principles)
 - **Decision:** what changes because of this (HLD/roadmap update, next step).
 ```
 
+## 2026-10-21: Where does "first token → first audio" go? The latency budget (F9 toy)
+- **Question:** of the ~1.3 s between the LLM's first token and the first audio, how much is waiting for the first full sentence and how much is Kokoro?
+- **Setup:**
+  - `spikes/learn/f9_budget.py`.
+  - `mlx_lm.server` with Qwen3-4B 4-bit, warm, plus Kokoro `hf_alpha` in-process, warm.
+  - 5 new Hindi questions with the voice system prompt, after one warm-up question that is dropped.
+  - Each first sentence (from `sentences()`) goes through `normalise()`, then the full `tts.speak()`. Kokoro returns a whole sentence at once.
+- **Prediction (owner):** mostly Kokoro.
+- **Result** (ms, median of 5): time to first token 334 · **A. sentence aggregation 844** · **B. Kokoro 397** · first token → first audio **1,241**.
+
+  | Question | First token | A. Aggregation | B. Kokoro | Words | Audio |
+  |---|---|---|---|---|---|
+  | आज मौसम कैसा है? | 339 | 851 | 391 | 9 | 4.0 s |
+  | मुझे कल सुबह सात बजे याद दिलाना। | 265 | 705 | 363 | 7 | 3.6 s |
+  | एक अच्छी किताब बताओ। | 457 | 768 | 397 | 8 | 3.8 s |
+  | चाय बनाने का आसान तरीका बताओ। | 334 | 1,663 | 594 | 21 | 7.6 s |
+  | तुम कौन हो? | 115 | 844 | 454 | 8 | 4.1 s |
+
+- **Findings:**
+  - The prediction was wrong. **Aggregation is 68%**: about 105 ms per Devanagari word (~3.75 tokens per word at ~36 tokens/s), so a 21-word first sentence costs 1.7 s.
+  - Kokoro is about 10× faster than real time, with ~300 ms of fixed overhead (8 words ≈ 400 ms, 21 words ≈ 600 ms).
+  - The cold-prompt time to first token is ~330 ms. The 90 ms in the 2026-10-19 entry reused a cached prompt.
+  - Budget compared with the voiceaiandvoiceagents.com primer (§5.1: about 1,300 ms typical, 1,500 ms target, 500 ms human turn gap):
+
+    | Stage | Primer | Fryday |
+    |---|---|---|
+    | ASR | — | 450 ms |
+    | Time to first token | 650 ms | 330 ms |
+    | Aggregation + TTS | 140 ms | 1,240 ms |
+    | Endpointing and network | — | not yet (push-to-talk, local) |
+    | **Total** | ~1,300 ms | **≈ 2.0 s** |
+
+- **Decision for v5, by impact:**
+  1. A short first chunk (~4 words), with aggregation expected to fall from ~850 ms to ~400 ms.
+  2. Measure Roman replies (~2.5× fewer tokens).
+  3. Leave Kokoro as is.
+
 ## 2026-10-20: Script convention, Whisper → Devanagari vs Oriserve → Roman Hinglish (v4 build, S0-8)
 - **Question:** which ASR output script should Fryday use? Is the Hinglish fine-tune more accurate than off-the-shelf Whisper?
 - **Setup:**
