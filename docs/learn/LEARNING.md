@@ -42,6 +42,25 @@ flowchart LR
 
 ---
 
+### 2026-10-21: F session 9 (learn): real-time voice systems
+- **Built or watched:**
+  - [Voice AI & Voice Agents: An Illustrated Primer](https://voiceaiandvoiceagents.com/), sections 4, 5.1, 5.7, 5.8 and 5.9.
+  - Live explanation: VAD vs Smart Turn; why production uses Pipecat and Nemotron, and why we build by hand first.
+  - Toy `spikes/learn/f9_budget.py`: Fryday's latency budget, split by stage.
+  - HLD fixed: Kokoro is the TTS default.
+- **Predicted vs actual:** predicted Kokoro dominates the first audio. It doesn't: waiting for the first sentence is 68% (844 ms) and Kokoro 32% (397 ms).
+- **Surprised me:**
+  - Fryday is ≈ 2.0 s from voice to voice, already near the primer's 1,500 ms target.
+  - Our first token (~330 ms) beats a cloud LLM's ~650 ms.
+  - Each Devanagari word costs ~105 ms of waiting.
+- **I can now explain:**
+  - the cascaded loop vs speech-to-speech models;
+  - each stage of a voice latency budget (mic, codec, jitter buffer, endpointing, ASR, first token, aggregation, TTS);
+  - VAD (is someone speaking?) vs Smart Turn (have they finished?) and how they chain;
+  - why the short first chunk is the biggest v5 win.
+- **Still don't get:** no quiz (owner's choice).
+- **Tomorrow's first step:** v5 learn 1, asyncio, queues, backpressure and cancellation.
+
 ### 2026-10-20: v3 builds 1–3 and v4 learn 1 + S0-8 build (long day)
 - **Built or watched:**
   - **v3 build 1** (2026-10-19): the speech-to-speech skeleton `make talk`: push-to-talk → Whisper → streamed Qwen → sentence chunks → Kokoro → speaker thread. Walkthroughs of `talk.py`, `asr.py`, `tts.py` and `voice.py`: the PortAudio callback thread, queue + sentinel + `task_done`, daemon threads, `yield from`, sentence chunking. Removed the topical examples from the voice prompt (the model kept talking about the gym).
