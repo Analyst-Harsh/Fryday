@@ -12,6 +12,32 @@ Every result goes here, **including negative ones** (roadmap working principles)
 - **Decision:** what changes because of this (HLD/roadmap update, next step).
 ```
 
+## 2026-10-22: Roman → Devanagari transliteration before TTS: IndicXlit (v5 build, S0-8 follow-up, step 2)
+- **Question:** can a transliterator turn Roman replies into Devanagari for Kokoro fast enough and cleanly enough to keep step 1's 251 ms saving?
+- **Setup:**
+  - `spikes/learn/v5_xlit.py` (run with `uv run --with ctranslate2`; no project dependency added).
+  - AI4Bharat IndicXlit (MIT) via the community CTranslate2 port `Singla0009/all-indic-transliteration` @ `23279e4`, CPU, beam 4, raw top hypothesis, one batch of words per chunk. Punctuation and digits pass through.
+  - The 8 Roman questions from step 1, one reply each from Qwen3-4B with the Roman prompt (26 chunks). The reverse model was also timed on the 8 Devanagari questions (the input side of option A).
+  - A blind A/B set of WAVs (Roman + transliteration vs today's Devanagari) was written but not listened to: the text errors already decided it.
+- **Result:**
+
+  | | Median | Max | n |
+  |---|---|---|---|
+  | First chunk → Devanagari | 22 ms | 33 ms | 8 |
+  | Any chunk (≈3.4 ms per word) | 19 ms | 33 ms | 26 |
+  | Input: Devanagari question → Roman | 21 ms | 34 ms | 8 |
+
+  - **Speed passes** (bar < 50 ms): it would keep about 230 of the 251 ms.
+  - **Quality fails:** about 1 word in 5 comes out wrong, mostly short common Hindi words, spelled out as English letter names: se → एसई, bas → बीएएस, par → ईपीएआर, do → ईडीओ, din → आईडीआईएन, aap → आईएपी, aur → यूआर, aaj → काज. Longer and English words are mostly fine (meeting → मीटिंग, Fryday → फ्राइडे, difficulty → डिफिकल्टी).
+  - The reverse direction is odd too (मेरी मीटिंग → "merrie meating", है → "haye").
+  - One "Roman" reply came back in Devanagari even with a Roman question (1/8).
+- **Prediction:** none recorded.
+- **Likely cause (hypothesis, not checked):** the official engine reranks its top-k guesses with a Hindi word-frequency dictionary; the port only exposes raw beams, and for 2–3-letter inputs the acronym reading wins.
+- **Decision:**
+  - **Keep Devanagari replies** (HLD §3.1 updated). Roman's 251 ms and 2x token saving stay on the table, blocked on transliteration quality.
+  - Revisit with reranking (check whether the right word is in the top 4 first), the official engine with its dictionary, or a better model, e.g. when GPU throughput (v9/v13) makes the 2x token cost matter more.
+- **Lesson:** a fast component is worthless if its output is wrong; check quality before latency. The text printout caught it without a listening test.
+
 ## 2026-10-22: Reply script vs first chunk: Devanagari vs Roman Hinglish (v5 build, S0-8 follow-up, step 1)
 - **Question:** do Roman replies reach the first speakable chunk sooner than Devanagari? Upper bound only: no transliteration before TTS yet (step 2).
 - **Setup:**
@@ -40,7 +66,7 @@ Every result goes here, **including negative ones** (roadmap working principles)
   - Both scripts produce made-up facts (a 4B model problem, v7a/v11), not script-specific.
   - n = 24 per side, one session, one machine: the gap is far bigger than the run-to-run spread seen so far, but the tails weren't checked.
 - **Decision:**
-  - Step 2 goes ahead (the saving clears the 150 ms bar): pick a Roman → Devanagari transliterator, measure its latency on real replies, and listen to Kokoro read them. Roman wins only if transliteration costs well under 250 ms and the speech isn't worse.
+  - Step 2 goes ahead (the saving clears the 150 ms bar; result: see the step 2 entry above, Devanagari kept): pick a Roman → Devanagari transliterator, measure its latency on real replies, and listen to Kokoro read them. Roman wins only if transliteration costs well under 250 ms and the speech isn't worse.
   - The input side of option A (Roman ASR via Oriserve, or Devanagari → Roman after Whisper) is part of the same decision.
   - HLD unchanged until step 2.
 

@@ -162,7 +162,7 @@ Exact IDs were checked against model cards on 2026-10-04 unless marked *(verify)
   - **ASR: off-the-shelf Whisper large-v3-turbo with `language="hi"`, which outputs Devanagari.** No fine-tune.
     - On 100 MUCS clips with matched decoding, it tied with Oriserve's Roman Hinglish fine-tune (median skeleton CER 31.1% vs 31.3%).
     - It was about 3× faster here, it's already in the stack, and it produced no junk tokens (Oriserve: stray `nan`, Cyrillic).
-  - The script of the ASR **input** barely affects latency: the user's ~10 words are prefill. The 2.5× Devanagari token cost is in the **reply**. Whether replies should be Roman plus transliteration (e.g. AI4Bharat IndicXlit *(verify)*) before TTS is a v5 latency question.
+  - The script of the ASR **input** barely affects latency: the user's ~10 words are prefill. The 2.5× Devanagari token cost is in the **reply**. **Replies stay Devanagari (decided 2026-10-22, v5, EXPERIMENTS).** Roman replies reach the first chunk 251 ms sooner with half the tokens, but IndicXlit (CTranslate2 port, raw top guess) spells about 1 in 5 words wrong, mostly short common ones (se → एसई, bas → बीएएस), so Kokoro would read garbage. Revisit with a transliterator that reranks its guesses with a word list (as the official engine does).
   - Known gap: Whisper sometimes writes English words in Latin script ("document"). That's harmless for the LLM, but if the reply copies them, Kokoro's Hindi voice misreads them.
 - **Money safety does not depend on TTS:** amounts are always shown as text on the approval card.
 
