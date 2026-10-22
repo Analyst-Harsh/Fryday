@@ -12,6 +12,38 @@ Every result goes here, **including negative ones** (roadmap working principles)
 - **Decision:** what changes because of this (HLD/roadmap update, next step).
 ```
 
+## 2026-10-22: Reply script vs first chunk: Devanagari vs Roman Hinglish (v5 build, S0-8 follow-up, step 1)
+- **Question:** do Roman replies reach the first speakable chunk sooner than Devanagari? Upper bound only: no transliteration before TTS yet (step 2).
+- **Setup:**
+  - `spikes/learn/v5_script_latency.py`.
+  - `mlx-community/Qwen3-4B-Instruct-2507-4bit` on `mlx_lm.server` (M-series Mac), Fryday's sampling settings.
+  - Two system prompts: Fryday's `voice_system_prompt`, and a copy with only the script line changed to Roman.
+  - 8 everyday questions × 3 rounds per prompt (n = 24 each). Each prompt runs as a block after a warm-up call (prefix cache), and block order alternates each round.
+  - First chunk from the real chunker (`voice.sentences`, short first chunk). Exact token counts from the Qwen3 tokenizer.
+- **Prediction (owner):** Roman's first chunk is 100–300 ms sooner.
+- **Result, run 1 (negative): Devanagari questions to both prompts.** 19/24 "Roman" replies came back in Devanagari. The 4B model copies the user's script over the system prompt, so the comparison (497 vs 440 ms) is meaningless.
+- **Result, run 2: questions in each prompt's own script** (option A is Roman end to end). 0/24 wrong-script replies on either side. Medians:
+
+  | | Devanagari | Roman | Change |
+  |---|---|---|---|
+  | TTFT | 118 ms | 111 ms | same |
+  | **First token → first chunk** | **495 ms** | **244 ms** | **−251 ms** |
+  | Tokens in first chunk | 23 | 11 | −52% |
+  | Tokens per word (whole replies) | 4.47 | 2.20 | −51% |
+  | Whole reply | 2,191 ms | 1,082 ms | −51% |
+
+- **Findings:**
+  - The prediction held: −251 ms, in the first token → first audio stretch (816 ms after build 1).
+  - Half the tokens per reply means about 2x the decode throughput on the same hardware: a cost argument for the GPU stages (v9, v13), on top of latency.
+  - Devanagari costs 4.47 tokens per word on real replies, more than F3's 3.75 from one sentence.
+  - Roman replies keep "Fryday" spelled right (Devanagari gave फ्रिडे / फ्रेडे), but use more digits despite the prompt ("30 degree", "1800 km", "1970"). The normaliser and transliterator must handle digits in Roman text.
+  - Both scripts produce made-up facts (a 4B model problem, v7a/v11), not script-specific.
+  - n = 24 per side, one session, one machine: the gap is far bigger than the run-to-run spread seen so far, but the tails weren't checked.
+- **Decision:**
+  - Step 2 goes ahead (the saving clears the 150 ms bar): pick a Roman → Devanagari transliterator, measure its latency on real replies, and listen to Kokoro read them. Roman wins only if transliteration costs well under 250 ms and the speech isn't worse.
+  - The input side of option A (Roman ASR via Oriserve, or Devanagari → Roman after Whisper) is part of the same decision.
+  - HLD unchanged until step 2.
+
 ## 2026-10-21: Silero VAD hands-free endpointing: min silence 300 vs 500 vs 800 ms (v5 build 2, partial)
 - **Question:** what minimum silence ends a turn without cutting Hinglish sentences at a thinking pause?
 - **Setup:** `silero-vad` 6.2.3 via `VADIterator` (threshold 0.5, silence below 0.35, 100 ms padding), 512-sample (32 ms) frames at 16 kHz from `sd.RawInputStream(blocksize=512)`. Run with `FRYDAY_HANDS_FREE=1 FRYDAY_VAD_MIN_SILENCE_MS=… make talk`. Planned protocol: 5 fixed sentences, each with a deliberate pause, at each threshold.
