@@ -48,3 +48,4 @@ def test_speaker_drops_a_cancelled_turn_mid_chunk(monkeypatch: pytest.MonkeyPatc
     speaker.close()
 
     assert [w[0] for w in out.writes] == [1, 1, 1, 2, 2]
+    assert speaker.played(2) == 200

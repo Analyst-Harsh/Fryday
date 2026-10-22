@@ -104,3 +104,22 @@ async def speak_reply(
     if buffer.strip():
         await say(buffer.strip())  # the reply ended without a closing space
     return SpokenReply("".join(pieces), first_token, first_audio)
+
+
+def heard_text(chunks: list[tuple[str, int]], played: int) -> str:
+    """The part of a reply that was played: whole chunks, then the cut chunk's words in
+    proportion to its bytes played.
+
+    chunks: (text, PCM bytes) in play order. ponytail: assumes words are evenly spread
+    through the audio; TTS word timestamps would place the cut exactly.
+    """
+    heard: list[str] = []
+    for text, size in chunks:
+        if played >= size:
+            heard.append(text)
+            played -= size
+            continue
+        words = text.split()
+        heard += words[: len(words) * played // size]
+        break
+    return " ".join(heard)

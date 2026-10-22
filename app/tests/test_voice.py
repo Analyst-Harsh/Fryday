@@ -3,7 +3,7 @@
 import asyncio
 from collections.abc import AsyncIterator, Iterator
 
-from fryday.voice import sentences, speak_reply
+from fryday.voice import heard_text, sentences, speak_reply
 
 
 def test_splits_on_hindi_and_latin_sentence_ends() -> None:
@@ -109,3 +109,11 @@ def test_speak_reply_with_empty_reply_plays_nothing() -> None:
     assert reply.text == ""
     assert reply.first_token_s is None
     assert reply.first_audio_s is None
+
+
+def test_heard_text_keeps_whole_chunks_then_a_share_of_the_cut_one() -> None:
+    chunks = [("Kal dhoop rahegi.", 100), ("Shaam ko halki baarish hogi.", 200)]
+    assert heard_text(chunks, 300) == "Kal dhoop rahegi. Shaam ko halki baarish hogi."
+    assert heard_text(chunks, 180) == "Kal dhoop rahegi. Shaam ko"  # 80/200 of 5 words
+    assert heard_text(chunks, 50) == "Kal"  # 50/100 of 3 words, rounded down
+    assert heard_text(chunks, 0) == ""
