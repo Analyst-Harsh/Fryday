@@ -3,7 +3,6 @@
 import queue
 import threading
 
-import sounddevice as sd
 import structlog
 
 log = structlog.stdlib.get_logger(__name__)
@@ -20,6 +19,9 @@ class Speaker:
     """
 
     def __init__(self, sample_rate: int) -> None:
+        # Imported here: sounddevice loads PortAudio, which the server and CI don't need.
+        import sounddevice as sd
+
         self._chunks: queue.Queue[tuple[int, bytes] | None] = queue.Queue()
         self._stream = sd.RawOutputStream(samplerate=sample_rate, channels=1, dtype="int16")
         self._stream.start()

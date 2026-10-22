@@ -12,7 +12,6 @@ from functools import partial
 from typing import cast
 
 import numpy as np
-import sounddevice as sd
 from silero_vad import VADIterator, load_silero_vad
 
 from fryday.asr import SAMPLE_RATE
@@ -72,6 +71,8 @@ def listen_push_to_talk(on_speech: OnSpeech, on_utterance: OnUtterance) -> None:
 
 def record_until_enter() -> bytes:
     """Record mono PCM16 at 16 kHz from the default mic until Enter is pressed."""
+    import sounddevice as sd  # here, not at the top: it loads PortAudio, which CI lacks
+
     frames: list[bytes] = []
 
     def on_audio(data: memoryview, _frames: int, _time: object, _status: object) -> None:
@@ -90,6 +91,8 @@ def listen_hands_free(
 
     on_speech fires at every VAD start, also while Fryday is talking: that's barge-in.
     """
+    import sounddevice as sd  # see record_until_enter
+
     chunks: queue.Queue[bytes] = queue.Queue()
 
     def on_audio(data: memoryview, _frames: int, _time: object, _status: object) -> None:

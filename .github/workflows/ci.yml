@@ -35,10 +35,6 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked --all-packages
 
-      # sounddevice loads PortAudio at import (mic.py, speaker.py); tests fake the device.
-      - name: Install PortAudio
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libportaudio2
-
       - name: Format check
         id: format-check
         run: uv run ruff format --check .

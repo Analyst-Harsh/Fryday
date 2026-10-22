@@ -1,8 +1,9 @@
+import sys
 import threading
 from collections.abc import Callable
+from types import SimpleNamespace
 
 import pytest
-from fryday import speaker as speaker_module
 from fryday.speaker import Speaker
 
 
@@ -30,7 +31,8 @@ def test_speaker_drops_a_cancelled_turn_mid_chunk(monkeypatch: pytest.MonkeyPatc
     def output(**_kwargs: object) -> FakeOutput:
         return out
 
-    monkeypatch.setattr(speaker_module.sd, "RawOutputStream", output)
+    # A fake sounddevice module: no PortAudio needed (CI has none).
+    monkeypatch.setitem(sys.modules, "sounddevice", SimpleNamespace(RawOutputStream=output))
     speaker = Speaker(sample_rate=1000)  # 50 ms pieces = 100 bytes
     speaker.allow(1)
     done = threading.Event()
