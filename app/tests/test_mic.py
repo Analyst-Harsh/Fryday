@@ -3,7 +3,7 @@ from collections.abc import Callable, Iterator
 
 import numpy as np
 from fryday.asr import SAMPLE_RATE
-from fryday.talk import MAX_UTTERANCE_S, VAD_FRAME, endpoint
+from fryday.mic import MAX_UTTERANCE_S, VAD_FRAME, endpoint, problem_with
 
 
 def frames(n: int) -> Iterator[np.ndarray]:
@@ -66,3 +66,10 @@ def test_endpoint_memory_stays_flat_while_idle():
     _, peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()
     assert peak < 100_000
+
+
+def test_problem_with_rejects_a_stray_key_press_and_a_silent_mic() -> None:
+    loud = np.full(SAMPLE_RATE, 3000, dtype="<i2")
+    assert problem_with(loud.tobytes()) is None
+    assert problem_with(loud[: SAMPLE_RATE // 10].tobytes()) == "(too short, try again)"
+    assert "Microphone" in (problem_with(bytes(SAMPLE_RATE * 2)) or "")  # all zeros

@@ -1,6 +1,7 @@
 """Tests for the reply → speech plumbing: sentence chunking and speak_reply, with fakes."""
 
-from collections.abc import Iterator
+import asyncio
+from collections.abc import AsyncIterator, Iterator
 
 from fryday.voice import sentences, speak_reply
 
@@ -73,15 +74,20 @@ def test_first_chunk_never_splits_an_amount_from_its_unit() -> None:
     assert next(sentences(words(reply))) == "इस फ़ोन की कीमत ₹2.5 लाख रुपये"
 
 
+async def stream(deltas: list[str]) -> AsyncIterator[str]:
+    for delta in deltas:
+        yield delta
+
+
 def test_speak_reply_speaks_each_sentence_and_plays_in_order() -> None:
     spoken: list[str] = []
     played: list[bytes] = []
 
-    def speak(sentence: str) -> Iterator[bytes]:
+    async def speak(sentence: str) -> list[bytes]:
         spoken.append(sentence)
-        yield sentence.encode()
+        return [sentence.encode()]
 
-    reply = speak_reply(["नमस्ते। ", "कैसे हो?"], speak, played.append)
+    reply = asyncio.run(speak_reply(stream(["नमस्ते। ", "कैसे हो?"]), speak, played.append))
 
     assert spoken == ["नमस्ते।", "कैसे हो?"]
     assert played == ["नमस्ते।".encode(), "कैसे हो?".encode()]
@@ -93,7 +99,11 @@ def test_speak_reply_speaks_each_sentence_and_plays_in_order() -> None:
 
 def test_speak_reply_with_empty_reply_plays_nothing() -> None:
     played: list[bytes] = []
-    reply = speak_reply([], lambda _s: iter([b"x"]), played.append)
+
+    async def speak(_sentence: str) -> list[bytes]:
+        return [b"x"]
+
+    reply = asyncio.run(speak_reply(stream([]), speak, played.append))
 
     assert played == []
     assert reply.text == ""

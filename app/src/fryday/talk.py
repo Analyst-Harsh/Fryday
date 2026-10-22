@@ -1,156 +1,164 @@
-"""Talk to Fryday: push-to-talk voice chat in the terminal (mic → ASR → LLM → TTS → speaker).
+"""Talk to Fryday: voice chat in the terminal (mic → ASR → LLM → TTS → speaker).
 
 Run the model server first (`make llm`), then `make talk`, or `FRYDAY_HANDS_FREE=1 make talk`
-to end each turn on silence (Silero VAD) instead of Enter. Use headphones: there is
-no echo cancellation. Barge-in and the browser come later in v5.
+to end each turn on silence (Silero VAD) instead of Enter. Speaking (or pressing Enter)
+while Fryday talks interrupts it. Use headphones: with no echo cancellation, Fryday's
+own voice would interrupt it hands-free. The browser client comes later in v5.
+
+This module wires the parts together: mic.py (listeners), turns.py (turn-taking),
+voice.py (reply → speech), speaker.py (playback).
 """
 
-import queue
+import asyncio
 import threading
 import time
 import uuid
-from collections import deque
-from collections.abc import Callable, Iterable, Iterator
-from typing import cast
+from collections.abc import AsyncIterator
+from functools import partial
 
-import numpy as np
 import openai
-import sounddevice as sd
 import structlog
-from silero_vad import VADIterator, load_silero_vad
+from langfuse import LangfuseSpan
 from structlog.contextvars import bind_contextvars, clear_contextvars
 
+from fryday import mic
 from fryday.asr import SAMPLE_RATE, ASRClient
 from fryday.cli import trim_history
 from fryday.config import Settings
 from fryday.llm import LLMClient, Message
 from fryday.logs import setup_logging
 from fryday.normalise import normalise
-from fryday.tracing import (
-    content,
-    init_tracing,
-    record,
-    shutdown_tracing,
-    span,
-    trace_root,
-)
+from fryday.speaker import PLAY_PIECE_S, Speaker
+from fryday.tracing import content, init_tracing, record, shutdown_tracing, span, trace_root
 from fryday.tts import TTSClient
-from fryday.voice import speak_reply
+from fryday.turns import TurnManager
+from fryday.voice import SpokenReply, speak_reply
 
-log = structlog.stdlib.get_logger(__name__)
-MIN_SPEECH_S = 0.3  # shorter than this is a stray key press, not speech
-SILENT_PEAK = 100  # of 32767 (about -50 dBFS): macOS records pure zeros without mic permission
-VAD_FRAME = 512  # samples (32 ms at 16 kHz): the only frame size Silero accepts at 16 kHz
-VAD_PAD_MS = 100  # kept before and after speech so first and last syllables aren't clipped
-MAX_UTTERANCE_S = 30  # hands-free stops here even if the VAD never hears silence
-# Frames kept while waiting for speech: Silero's start reaches back the pad plus one frame.
-PRE_SPEECH_FRAMES = VAD_PAD_MS * SAMPLE_RATE // 1000 // VAD_FRAME + 2
+log = structlog.get_logger(__name__)
 
 
-def record_until_enter() -> bytes:
-    """Record mono PCM16 at 16 kHz from the default mic until Enter is pressed."""
-    frames: list[bytes] = []
+class VoiceSession:
+    """One conversation: its history, and how a single turn runs (ASR → LLM → TTS)."""
 
-    def on_audio(data: memoryview, _frames: int, _time: object, _status: object) -> None:
-        frames.append(bytes(data))  # PortAudio's thread; list.append is thread-safe
+    def __init__(
+        self, settings: Settings, asr: ASRClient, llm: LLMClient, tts: TTSClient, speaker: Speaker
+    ) -> None:
+        self._settings = settings
+        self._asr, self._llm, self._tts, self._speaker = asr, llm, tts, speaker
+        self._history: list[Message] = [{"role": "system", "content": settings.voice_system_prompt}]
+        self._session_id = uuid.uuid4().hex
+        # Hands-free, the turn only ends after this much silence: part of the user's wait.
+        self._vad_wait_s = settings.vad_min_silence_ms / 1000 if settings.hands_free else 0.0
 
-    # macOS resamples the mic's native 48 kHz to the 16 kHz we ask for.
-    with sd.RawInputStream(samplerate=SAMPLE_RATE, channels=1, dtype="int16", callback=on_audio):
-        input("🎙  listening… press Enter to stop ")
-    return b"".join(frames)
+    async def run_turn(self, pcm: bytes, turn_id: int) -> None:
+        clear_contextvars()  # the task's own copy: other turns' log context is untouched
+        bind_contextvars(turn_id=turn_id, session_id=self._session_id)
+        # One trace per turn: asr, llm.stream and each tts sentence are its children.
+        with trace_root("voice_turn", session_id=self._session_id) as turn:
+            user, asr_s = await self._transcribe(pcm)
+            if not user:
+                print("(heard nothing, try again)")
+                record(turn, error="empty_transcript")
+                return
+            turn.update(input=content(user))  # through the privacy gate, like trace_root
+            print(f"you>    {user}")
+            self._remember({"role": "user", "content": user})
 
-
-def endpoint(
-    frames: Iterable[np.ndarray], vad: Callable[[np.ndarray], dict[str, int | float] | None]
-) -> bytes:
-    """Cut one utterance out of a stream of VAD_FRAME-sample int16 frames, from the
-    VAD's start event to its end event (sample indices, padding included)."""
-    audio: deque[np.ndarray] = deque()
-    dropped = 0  # samples trimmed off the front while idle; VAD indices count them
-    start: int | None = None  # index into `audio`, not the VAD's turn-wide count
-    for frame in frames:
-        audio.append(frame)
-        event = vad(frame) or {}
-        if "start" in event:
-            start = max(0, int(event["start"]) - dropped)
-        if start is None:
-            if len(audio) > PRE_SPEECH_FRAMES:  # idle: memory stays flat however long we wait
-                audio.popleft()
-                dropped += VAD_FRAME
-            continue
-        end = int(event["end"]) - dropped if "end" in event else None
-        if end is None and len(audio) * VAD_FRAME - start >= MAX_UTTERANCE_S * SAMPLE_RATE:
-            end = len(audio) * VAD_FRAME  # never heard an end (TV, fan): send what we have
-        if end is not None:
-            return np.concatenate(audio)[start:end].tobytes()
-    return b""
-
-
-def record_until_silence(model: object, min_silence_ms: int) -> bytes:
-    """Record from the mic until Silero VAD hears speech and then min_silence_ms of silence."""
-    chunks: queue.Queue[bytes] = queue.Queue()
-
-    def on_audio(data: memoryview, _frames: int, _time: object, _status: object) -> None:
-        chunks.put(bytes(data))  # PortAudio's thread; Queue is thread-safe
-
-    def frames() -> Iterator[np.ndarray]:
-        while True:
-            yield np.frombuffer(chunks.get(), dtype="<i2")
-
-    # A fresh iterator per turn resets the model's state and the sample counter.
-    vad = VADIterator(
-        model,
-        sampling_rate=SAMPLE_RATE,
-        min_silence_duration_ms=min_silence_ms,
-        speech_pad_ms=VAD_PAD_MS,
-    )
-    with sd.RawInputStream(
-        samplerate=SAMPLE_RATE, channels=1, dtype="int16", blocksize=VAD_FRAME, callback=on_audio
-    ):
-        print("🎙  listening… just speak, and pause to send ")
-        # VADIterator turns the float32 array into a tensor itself.
-        return endpoint(frames(), lambda f: vad(f.astype(np.float32) / 32768))
-
-
-class Speaker:
-    """Plays PCM16 chunks in order on a background thread, so play() returns at once
-    and the next sentence can render while this one is heard."""
-
-    def __init__(self, sample_rate: int) -> None:
-        self._chunks: queue.Queue[bytes | None] = queue.Queue()
-        self._stream = sd.RawOutputStream(samplerate=sample_rate, channels=1, dtype="int16")
-        self._stream.start()
-        self._error: Exception | None = None
-        self._thread = threading.Thread(target=self._run, daemon=True)
-        self._thread.start()
-
-    def _run(self) -> None:
-        while (chunk := self._chunks.get()) is not None:
+            said: list[str] = []  # filled as deltas arrive, so a cancelled turn keeps them
             try:
-                if self._error is None:  # after a failure, just drain so wait() returns
-                    # Blocks until the device has room, which paces playback.
-                    self._stream.write(chunk)  # pyright: ignore[reportUnknownMemberType]
-            except Exception as e:  # handed to the main thread in wait()
-                self._error = e
-            finally:
-                self._chunks.task_done()
-        self._chunks.task_done()
+                reply = await speak_reply(
+                    self._deltas(said), self._speak, partial(self._speaker.play, turn=turn_id)
+                )
+            except openai.APIError:
+                log.exception("llm_failed")
+                print("(Fryday couldn't reach the model. Is `make llm` running?)")
+                self._history.pop()  # drop the unanswered user turn
+                record(turn, error="llm_failed")
+                return
+            except asyncio.CancelledError:
+                self._interrupted(turn, "".join(said))
+                raise
+            self._remember({"role": "assistant", "content": reply.text})
+            self._report(turn, reply, asr_s, pcm)
 
-    def play(self, pcm: bytes) -> None:
-        self._chunks.put(pcm)
+    async def _transcribe(self, pcm: bytes) -> tuple[str, float]:
+        start = time.perf_counter()
+        with span("asr") as asr_span:
+            user = await asyncio.to_thread(self._asr.transcribe, pcm, SAMPLE_RATE)
+            record(asr_span, output=user)
+        return user, time.perf_counter() - start
 
-    def wait(self) -> None:
-        """Block until every queued chunk has been handed to the device; re-raise its error."""
-        self._chunks.join()
-        if (error := self._error) is not None:
-            self._error = None
-            raise error
+    async def _deltas(self, said: list[str]) -> AsyncIterator[str]:
+        async for event in self._llm.reply(list(self._history)):
+            said.append(event.text)
+            yield event.text
 
-    def close(self) -> None:
-        self._chunks.put(None)
-        self._thread.join()
-        self._stream.stop()
-        self._stream.close()
+    async def _speak(self, sentence: str) -> list[bytes]:
+        return await asyncio.to_thread(self._render, sentence)  # Kokoro blocks
+
+    def _render(self, sentence: str) -> list[bytes]:
+        print(f"fryday> {sentence}")
+        spoken = normalise(sentence)  # layer 2 safety net: ₹, times, decimals
+        with span("tts", input=spoken):
+            # ponytail: renders the whole chunk before playing it; stream Kokoro's
+            # segments through a queue if long chunks delay first audio.
+            return list(self._tts.speak(spoken))
+
+    def _remember(self, message: Message) -> None:
+        self._history.append(message)
+        self._history[:] = trim_history(self._history, self._settings.max_history_messages)
+
+    def _interrupted(self, turn: LangfuseSpan, said: str) -> None:
+        # ponytail: keeps what was generated, not what was heard (TTS runs ahead of
+        # playback); production gap #33.
+        if said:
+            self._remember({"role": "assistant", "content": said})
+        print("        (interrupted)")
+        log.info("barge_in", said_chars=len(said))
+        record(turn, output=said, error="barge_in")
+
+    def _report(self, turn: LangfuseSpan, reply: SpokenReply, asr_s: float, pcm: bytes) -> None:
+        stats = {
+            "asr_s": round(asr_s, 3),
+            "llm_first_token_s": _round(reply.first_token_s),
+            "first_audio_s": _round(reply.first_audio_s),
+            "speech_in_s": round(len(pcm) / 2 / SAMPLE_RATE, 2),
+            "vad_wait_s": self._vad_wait_s,
+        }
+        record(turn, output=reply.text, metadata=stats)
+        log.info("voice_turn", **stats)
+        heard_s = self._vad_wait_s + asr_s + (reply.first_audio_s or 0)
+        print(
+            f"        ⏱  silence {_ms(self._vad_wait_s)} → ASR {asr_s:.2f} s"
+            f" → first token +{_ms(reply.first_token_s)}"
+            f" → first audio +{_ms(reply.first_audio_s)}"
+            f"  (you stop talking → Fryday speaks: {heard_s:.2f} s)"
+        )
+
+
+async def converse(settings: Settings, session: VoiceSession, speaker: Speaker) -> None:
+    """The turn loop: a mic thread feeds utterances in, one turn runs at a time."""
+    loop = asyncio.get_running_loop()
+    utterances: asyncio.Queue[bytes | None] = asyncio.Queue()
+    turns = TurnManager(session.run_turn, speaker.allow)
+
+    # The mic thread must never touch asyncio objects directly: hand calls to the loop.
+    def on_speech() -> None:
+        loop.call_soon_threadsafe(turns.interrupt)
+
+    def on_utterance(pcm: bytes | None) -> None:
+        loop.call_soon_threadsafe(utterances.put_nowait, pcm)
+
+    listen = mic.make_listener(settings, on_speech, on_utterance)
+    print(f"(barge-in: audio stops within {_ms(PLAY_PIECE_S + speaker.latency_s)} of the cut)")
+    threading.Thread(target=listen, daemon=True).start()
+
+    while (pcm := await utterances.get()) is not None:  # None: the user quit
+        if problem := mic.problem_with(pcm):
+            print(problem)
+            continue
+        turns.start(pcm)
+    turns.interrupt()
 
 
 def main() -> None:
@@ -160,8 +168,21 @@ def main() -> None:
     llm = LLMClient(settings)
     print("Loading Whisper and Kokoro…")
     asr, tts = ASRClient(settings), TTSClient(settings)
-    # First calls compile GPU kernels; pay that now, not on the first turn.
-    asr.transcribe(bytes(SAMPLE_RATE * 2), SAMPLE_RATE)  # 1 s of silence
+    if not _warm_up(settings, asr, llm, tts):
+        return
+    speaker = Speaker(tts.sample_rate)
+    try:
+        asyncio.run(converse(settings, VoiceSession(settings, asr, llm, tts, speaker), speaker))
+    except KeyboardInterrupt:
+        print()
+    finally:
+        speaker.close()
+        shutdown_tracing()
+
+
+def _warm_up(settings: Settings, asr: ASRClient, llm: LLMClient, tts: TTSClient) -> bool:
+    """Pay first-call costs now, not on the first turn. False if the LLM is unreachable."""
+    asr.transcribe(bytes(SAMPLE_RATE * 2), SAMPLE_RATE)  # 1 s of silence: compiles kernels
     list(tts.speak("नमस्ते।"))
     # Also warms the server's prefix cache for the voice system prompt (smoke run: first
     # token 8.5 s cold vs 0.1 s warm). Fails fast here if `make llm` isn't running.
@@ -175,93 +196,8 @@ def main() -> None:
     except openai.APIError:
         # Also raised on timeout (e.g. the server is still downloading or loading a model).
         print("Model server unreachable or too slow. Run `make llm` and wait until it's loaded.")
-        return
-    speaker = Speaker(tts.sample_rate)
-    # Silero ships untyped; the model is only handed back to its own VADIterator.
-    vad_model = cast(object, load_silero_vad()) if settings.hands_free else None
-    # Hands-free, the turn only ends after this much silence: part of the user's wait.
-    vad_wait_s = settings.vad_min_silence_ms / 1000 if vad_model else 0.0
-
-    history: list[Message] = [{"role": "system", "content": settings.voice_system_prompt}]
-    session_id = uuid.uuid4().hex
-    if vad_model:
-        print(f"Fryday voice, hands-free ({settings.vad_min_silence_ms} ms). Ctrl-C quits.")
-    else:
-        print("Fryday voice — use headphones. Enter to talk, Ctrl-D quits.")
-
-    try:
-        while True:
-            try:
-                if vad_model:
-                    print()
-                    pcm = record_until_silence(vad_model, settings.vad_min_silence_ms)
-                else:
-                    input("\n⏎  press Enter and speak ")
-                    pcm = record_until_enter()
-            except (EOFError, KeyboardInterrupt):
-                print()
-                return
-            if len(pcm) < MIN_SPEECH_S * SAMPLE_RATE * 2:  # 2 bytes per sample
-                print("(too short, try again)")
-                continue
-
-            if np.abs(np.frombuffer(pcm, dtype="<i2")).max() < SILENT_PEAK:
-                print("(silence: check System Settings > Privacy > Microphone for your terminal)")
-                continue
-
-            clear_contextvars()
-            bind_contextvars(turn_id=uuid.uuid4().hex[:8], session_id=session_id)
-
-            def say(sentence: str) -> Iterator[bytes]:
-                print(f"fryday> {sentence}")
-                spoken = normalise(sentence)  # layer 2 safety net: ₹, times, decimals
-                with span("tts", input=spoken):
-                    yield from tts.speak(spoken)
-
-            # One trace per turn: asr, llm.stream and each tts sentence are its children.
-            with trace_root("voice_turn", session_id=session_id) as turn:
-                t0 = time.perf_counter()
-                with span("asr") as asr_span:
-                    user = asr.transcribe(pcm, SAMPLE_RATE)
-                    record(asr_span, output=user)
-                asr_s = time.perf_counter() - t0
-                if not user:
-                    print("(heard nothing, try again)")
-                    record(turn, error="empty_transcript")
-                    continue
-                turn.update(input=content(user))  # through the privacy gate, like trace_root
-                print(f"you>    {user}")
-                history.append({"role": "user", "content": user})
-                history = trim_history(history, settings.max_history_messages)
-                try:
-                    reply = speak_reply(llm.stream(history), say, speaker.play)
-                except openai.APIError:
-                    log.exception("llm_failed")
-                    print("(Fryday couldn't reach the model. Is `make llm` running?)")
-                    history.pop()  # drop the unanswered user turn
-                    record(turn, error="llm_failed")
-                    continue
-                speaker.wait()
-                history.append({"role": "assistant", "content": reply.text})
-                stats = {
-                    "asr_s": round(asr_s, 3),
-                    "llm_first_token_s": _round(reply.first_token_s),
-                    "first_audio_s": _round(reply.first_audio_s),
-                    "speech_in_s": round(len(pcm) / 2 / SAMPLE_RATE, 2),
-                    "vad_wait_s": vad_wait_s,
-                }
-                record(turn, output=reply.text, metadata=stats)
-                log.info("voice_turn", **stats)
-                heard_s = vad_wait_s + asr_s + (reply.first_audio_s or 0)
-                print(
-                    f"        ⏱  silence {_ms(vad_wait_s)} → ASR {asr_s:.2f} s"
-                    f" → first token +{_ms(reply.first_token_s)}"
-                    f" → first audio +{_ms(reply.first_audio_s)}"
-                    f"  (you stop talking → Fryday speaks: {heard_s:.2f} s)"
-                )
-    finally:
-        speaker.close()
-        shutdown_tracing()
+        return False
+    return True
 
 
 def _round(seconds: float | None) -> float | None:

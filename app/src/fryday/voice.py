@@ -6,7 +6,7 @@ in the real microphone, speaker, LLMClient and TTSClient.
 
 import re
 import time
-from collections.abc import Callable, Generator, Iterable
+from collections.abc import AsyncIterable, Awaitable, Callable, Generator, Iterable
 from dataclasses import dataclass
 
 # A sentence ends at । ? ! or . followed by whitespace, or at a line break (models often
@@ -37,20 +37,24 @@ def _first_chunk_end(buffer: str) -> int | None:
     return None
 
 
-def sentences(deltas: Iterable[str]) -> Generator[str, None, None]:
-    """Regroup streamed text deltas into speakable chunks, each yielded as soon as it ends.
+def split_chunks(buffer: str, first: bool) -> tuple[list[str], str]:
+    """The speakable chunks finished in buffer, and the rest (which may still grow).
 
-    The first chunk is cut early (a clause or ~6 words) so TTS can start; the rest are
-    whole sentences, which sound more natural.
+    first: no chunk has been yielded yet, so cut it early (a clause or ~6 words) and
+    TTS can start; later chunks are whole sentences, which sound more natural.
     """
+    *done, buffer = _SENTENCE_END.split(buffer)
+    if first and not done and (cut := _first_chunk_end(buffer)) is not None:
+        done, buffer = [buffer[:cut]], buffer[cut:]
+    return [s.strip() for s in done if s.strip()], buffer
+
+
+def sentences(deltas: Iterable[str]) -> Generator[str, None, None]:
+    """Regroup streamed text deltas into speakable chunks, each yielded as soon as it ends."""
     buffer = ""
     first = True
     for delta in deltas:
-        buffer += delta
-        *done, buffer = _SENTENCE_END.split(buffer)  # the last part may still be growing
-        if first and not done and (cut := _first_chunk_end(buffer)) is not None:
-            done, buffer = [buffer[:cut]], buffer[cut:]
-        chunks = [s.strip() for s in done if s.strip()]
+        chunks, buffer = split_chunks(buffer + delta, first)
         first = first and not chunks
         yield from chunks
     if buffer.strip():
@@ -64,33 +68,39 @@ class SpokenReply:
     first_audio_s: float | None  # time until the first PCM chunk was handed to the speaker
 
 
-def speak_reply(
-    deltas: Iterable[str],
-    speak: Callable[[str], Iterable[bytes]],
+async def speak_reply(
+    deltas: AsyncIterable[str],
+    speak: Callable[[str], Awaitable[list[bytes]]],
     play: Callable[[bytes], None],
 ) -> SpokenReply:
-    """Stream deltas → sentences → speak → play, timing the first token and first audio.
+    """Stream deltas → chunks → speak → play, timing the first token and first audio.
 
-    Sequential on purpose: TTS renders a sentence in ~0.05x real time, so the LLM barely
-    waits. play() must not block for the length of the audio (talk.py queues it), or
-    sentence 2 would only start rendering after sentence 1 finished playing.
+    Sequential on purpose: TTS renders a chunk in ~0.05x real time, and the LLM keeps
+    generating into reply()'s queue meanwhile. speak() must render off the event loop
+    (talk.py uses to_thread), and play() must only queue the audio, not wait for it.
+    Cancelling the task that awaits this stops it at the next await (barge-in).
     """
     start = time.perf_counter()
     pieces: list[str] = []
     first_token: float | None = None
     first_audio: float | None = None
+    buffer, first = "", True
 
-    def tap() -> Generator[str, None, None]:  # keep the full text and the first-token time
-        nonlocal first_token
-        for delta in deltas:
-            if first_token is None:
-                first_token = time.perf_counter() - start
-            pieces.append(delta)
-            yield delta
-
-    for sentence in sentences(tap()):
-        for pcm in speak(sentence):
+    async def say(chunk: str) -> None:
+        nonlocal first_audio
+        for pcm in await speak(chunk):
             if first_audio is None:
                 first_audio = time.perf_counter() - start
             play(pcm)
+
+    async for delta in deltas:
+        if first_token is None:
+            first_token = time.perf_counter() - start
+        pieces.append(delta)
+        chunks, buffer = split_chunks(buffer + delta, first)
+        first = first and not chunks
+        for chunk in chunks:
+            await say(chunk)
+    if buffer.strip():
+        await say(buffer.strip())  # the reply ended without a closing space
     return SpokenReply("".join(pieces), first_token, first_audio)

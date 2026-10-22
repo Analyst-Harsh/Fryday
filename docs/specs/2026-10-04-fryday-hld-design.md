@@ -103,13 +103,15 @@ Fryday is a Hinglish tap-to-talk voice assistant whose real purpose is **learnin
 6. Reply tokens → chunks (a short first chunk of ~6 words, then sentences) → normaliser (out) → `tts` → audio emitted **in order** with `turn_id`/`chunk_seq`. The queue is bounded, so backpressure pauses TTS.
 7. Background: memory extraction, audit and history rows; audio is saved only with consent.
 
-**Barge-in**: tapping the mic during playback stops the reply and starts listening. It does five things:
+**Barge-in**: tapping the mic during playback stops the reply and starts listening. It does four things:
 1. bumps the turn epoch, so the client drops stale chunks;
 2. closes the LLM stream (vLLM aborts the request);
 3. cancels in-flight Triton requests (**cancellation is gRPC-only in Triton; the Python and vLLM backends support early termination**);
 4. marks the turn interrupted.
 
 Tap-to-talk means no VAD runs on echoing audio in v1.
+
+On the Mac (v5: `turns.py` turn-taking, `mic.py` listeners, `speaker.py` playback, wired in `talk.py`) the turn manager is asyncio: one task per turn; ASR and TTS run in `to_thread`, and `LLMClient.reply()` runs the blocking stream on its own thread (one thread per stream keeps its trace open and closed in the same place). The epoch is `turn_id`: the speaker writes in 50 ms pieces and drops any piece from an older turn, which also covers audio an orphaned TTS thread finishes after cancel. A VAD start (hands-free, headphones only) or Enter (push-to-talk) triggers barge-in.
 
 **Warm-up**: each backend runs one warm-up inference per model before its readiness probe goes green, because Triton cold start and the first TensorRT/CUDA-graph call take seconds.
 

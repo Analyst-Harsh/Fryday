@@ -4,7 +4,9 @@ The real LLMClient, openai SDK and httpx2 run unchanged; only the network at the
 bottom is replaced by a handler function that plays the model server.
 """
 
+import asyncio
 import json
+import threading
 from collections.abc import Callable, Iterator
 
 import httpx2
@@ -161,3 +163,66 @@ def test_stopping_early_is_recorded_but_not_an_error(traced: Traced) -> None:
     assert attrs.get(OBS + "level") != "ERROR"
     assert attrs[OBS + "metadata.stopped_early"] is not None
     assert attrs[OBS + "output"] == "Na"  # the partial reply that was actually spoken
+
+
+# --- reply(): stream() as async events for the turn manager ------------------------
+
+
+async def collect(llm: LLMClient) -> list[str]:
+    return [event.text async for event in llm.reply(HI)]
+
+
+def test_reply_yields_each_delta_as_a_text_event() -> None:
+    assert asyncio.run(collect(fake_llm(ok_handler))) == ["Na", "mas", "te"]
+
+
+def test_reply_raises_a_server_error_in_the_consumer() -> None:
+    def handler(_request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(500, json={"error": "boom"})
+
+    with pytest.raises(openai.APIError):
+        asyncio.run(collect(fake_llm(handler)))
+
+
+def test_reply_generation_stays_a_child_of_the_turn_across_its_thread(traced: Traced) -> None:
+    spans = traced()
+
+    async def turn() -> None:
+        with trace_root("turn", session_id="sess-1"):
+            await collect(fake_llm(ok_handler))
+
+    asyncio.run(turn())
+    finished = {s.name: s for s in spans.get_finished_spans()}
+    llm_span, turn_span = finished["llm.stream"], finished["turn"]
+    assert llm_span.parent is not None
+    assert turn_span.context is not None
+    assert llm_span.parent.span_id == turn_span.context.span_id
+
+
+def test_reply_stopped_early_closes_the_stream_in_its_thread(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    release, closed = threading.Event(), threading.Event()
+    produced: list[str] = []
+
+    def slow_stream(_messages: list[Message]) -> Iterator[str]:
+        try:
+            for text in ["a", "b", "c"]:
+                produced.append(text)
+                yield text
+                release.wait(timeout=5)  # the server is still generating
+        finally:
+            closed.set()
+
+    llm = fake_llm(ok_handler)
+    monkeypatch.setattr(llm, "stream", slow_stream)
+
+    async def take_one() -> bool:
+        events = llm.reply(HI)
+        await anext(events)
+        await events.aclose()  # what cancelling the turn does to it
+        release.set()  # the server sends more, while the loop is still running
+        return await asyncio.to_thread(closed.wait, 5)
+
+    assert asyncio.run(take_one())
+    assert produced == ["a", "b"]  # stopped at the next delta, never asked for "c"
