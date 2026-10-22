@@ -4,7 +4,11 @@ Anything speaking the OpenAI chat-completions contract works behind it:
 mlx_lm.server on the Mac today, vLLM on the GPU box later (v13).
 """
 
-from collections.abc import Generator
+import asyncio
+import contextvars
+import threading
+from collections.abc import AsyncGenerator, Generator
+from dataclasses import dataclass
 
 import httpx2
 from openai import OpenAI
@@ -14,6 +18,14 @@ from fryday.config import Settings
 from fryday.tracing import generation
 
 Message = ChatCompletionMessageParam
+
+
+@dataclass(frozen=True)
+class TextDelta:
+    text: str
+
+
+ReplyEvent = TextDelta  # v1 widens this to a union with tool-call and filler events
 
 
 class LLMClient:
@@ -66,3 +78,46 @@ class LLMClient:
                 if chunk.choices and (text := chunk.choices[0].delta.content):
                     gen.chunk(text)  # first one marks time-to-first-token
                     yield text
+
+    async def reply(self, messages: list[Message]) -> AsyncGenerator[ReplyEvent]:
+        """stream() as async events, for the asyncio turn manager.
+
+        stream() blocks on the network, and an event loop must never block (the mic
+        would stall), so it runs on one thread of its own: the same thread opens and
+        closes its trace. Deltas cross back through an asyncio.Queue. When the consumer
+        stops early (barge-in cancels it), that thread closes the stream at the next
+        delta, which ends the HTTP request and marks the trace stopped_early.
+        """
+        loop = asyncio.get_running_loop()
+        events: asyncio.Queue[ReplyEvent | Exception | None] = asyncio.Queue()
+        stop = threading.Event()
+
+        def put(item: ReplyEvent | Exception | None) -> None:
+            loop.call_soon_threadsafe(events.put_nowait, item)
+
+        def produce() -> None:
+            deltas = self.stream(messages)
+            end: Exception | None = None
+            try:
+                for text in deltas:
+                    if stop.is_set():
+                        break
+                    put(TextDelta(text))
+            except Exception as e:  # re-raised in the consumer
+                end = e
+            finally:
+                deltas.close()
+            if not stop.is_set():
+                put(end)
+
+        # copy_context: the generation span is parented to the caller's turn trace.
+        threading.Thread(
+            target=contextvars.copy_context().run, args=(produce,), daemon=True
+        ).start()
+        try:
+            while (event := await events.get()) is not None:
+                if isinstance(event, Exception):
+                    raise event
+                yield event
+        finally:
+            stop.set()

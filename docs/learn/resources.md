@@ -50,6 +50,8 @@ These are video-first and ordered by roadmap version.
 - Tools: [mlx-whisper](https://github.com/ml-explore/mlx-examples/tree/main/whisper) · [mlx-audio](https://github.com/Blaizzy/mlx-audio) · [faster-whisper](https://github.com/SYSTRAN/faster-whisper)
 
 ## v5: Real-time voice
+- ⭐ [Corey Schafer: AsyncIO, complete guide with animations](https://www.youtube.com/watch?v=oAkLSJNr5zY) (video; checked through oEmbed 2026-10-21) · alternative: [mCoding: Intro to async Python](https://www.youtube.com/watch?v=ftmdDlwMwwQ)
+- ⭐ F9: [Voice AI & Voice Agents: An Illustrated Primer](https://voiceaiandvoiceagents.com/), §4, §5.1 and §5.7–5.9
 - ⭐ [Pipecat docs](https://docs.pipecat.ai), on pipelines and interruptions
 - [LiveKit Agents docs](https://docs.livekit.io/agents/), on turn detection
 - [Silero VAD](https://github.com/snakers4/silero-vad)

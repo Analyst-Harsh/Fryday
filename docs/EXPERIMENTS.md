@@ -12,6 +12,155 @@ Every result goes here, **including negative ones** (roadmap working principles)
 - **Decision:** what changes because of this (HLD/roadmap update, next step).
 ```
 
+## 2026-10-22: Roman → Devanagari transliteration before TTS: IndicXlit (v5 build, S0-8 follow-up, step 2)
+- **Question:** can a transliterator turn Roman replies into Devanagari for Kokoro fast enough and cleanly enough to keep step 1's 251 ms saving?
+- **Setup:**
+  - `spikes/learn/v5_xlit.py` (run with `uv run --with ctranslate2`; no project dependency added).
+  - AI4Bharat IndicXlit (MIT) via the community CTranslate2 port `Singla0009/all-indic-transliteration` @ `23279e4`, CPU, beam 4, raw top hypothesis, one batch of words per chunk. Punctuation and digits pass through.
+  - The 8 Roman questions from step 1, one reply each from Qwen3-4B with the Roman prompt (26 chunks). The reverse model was also timed on the 8 Devanagari questions (the input side of option A).
+  - A blind A/B set of WAVs (Roman + transliteration vs today's Devanagari) was written but not listened to: the text errors already decided it.
+- **Result:**
+
+  | | Median | Max | n |
+  |---|---|---|---|
+  | First chunk → Devanagari | 22 ms | 33 ms | 8 |
+  | Any chunk (≈3.4 ms per word) | 19 ms | 33 ms | 26 |
+  | Input: Devanagari question → Roman | 21 ms | 34 ms | 8 |
+
+  - **Speed passes** (bar < 50 ms): it would keep about 230 of the 251 ms.
+  - **Quality fails:** about 1 word in 5 comes out wrong, mostly short common Hindi words, spelled out as English letter names: se → एसई, bas → बीएएस, par → ईपीएआर, do → ईडीओ, din → आईडीआईएन, aap → आईएपी, aur → यूआर, aaj → काज. Longer and English words are mostly fine (meeting → मीटिंग, Fryday → फ्राइडे, difficulty → डिफिकल्टी).
+  - The reverse direction is odd too (मेरी मीटिंग → "merrie meating", है → "haye").
+  - One "Roman" reply came back in Devanagari even with a Roman question (1/8).
+- **Prediction:** none recorded.
+- **Likely cause (hypothesis, not checked):** the official engine reranks its top-k guesses with a Hindi word-frequency dictionary; the port only exposes raw beams, and for 2–3-letter inputs the acronym reading wins.
+- **Decision:**
+  - **Keep Devanagari replies** (HLD §3.1 updated). Roman's 251 ms and 2x token saving stay on the table, blocked on transliteration quality.
+  - Revisit with reranking (check whether the right word is in the top 4 first), the official engine with its dictionary, or a better model, e.g. when GPU throughput (v9/v13) makes the 2x token cost matter more.
+- **Lesson:** a fast component is worthless if its output is wrong; check quality before latency. The text printout caught it without a listening test.
+
+## 2026-10-22: Reply script vs first chunk: Devanagari vs Roman Hinglish (v5 build, S0-8 follow-up, step 1)
+- **Question:** do Roman replies reach the first speakable chunk sooner than Devanagari? Upper bound only: no transliteration before TTS yet (step 2).
+- **Setup:**
+  - `spikes/learn/v5_script_latency.py`.
+  - `mlx-community/Qwen3-4B-Instruct-2507-4bit` on `mlx_lm.server` (M-series Mac), Fryday's sampling settings.
+  - Two system prompts: Fryday's `voice_system_prompt`, and a copy with only the script line changed to Roman.
+  - 8 everyday questions × 3 rounds per prompt (n = 24 each). Each prompt runs as a block after a warm-up call (prefix cache), and block order alternates each round.
+  - First chunk from the real chunker (`voice.sentences`, short first chunk). Exact token counts from the Qwen3 tokenizer.
+- **Prediction (owner):** Roman's first chunk is 100–300 ms sooner.
+- **Result, run 1 (negative): Devanagari questions to both prompts.** 19/24 "Roman" replies came back in Devanagari. The 4B model copies the user's script over the system prompt, so the comparison (497 vs 440 ms) is meaningless.
+- **Result, run 2: questions in each prompt's own script** (option A is Roman end to end). 0/24 wrong-script replies on either side. Medians:
+
+  | | Devanagari | Roman | Change |
+  |---|---|---|---|
+  | TTFT | 118 ms | 111 ms | same |
+  | **First token → first chunk** | **495 ms** | **244 ms** | **−251 ms** |
+  | Tokens in first chunk | 23 | 11 | −52% |
+  | Tokens per word (whole replies) | 4.47 | 2.20 | −51% |
+  | Whole reply | 2,191 ms | 1,082 ms | −51% |
+
+- **Findings:**
+  - The prediction held: −251 ms, in the first token → first audio stretch (816 ms after build 1).
+  - Half the tokens per reply means about 2x the decode throughput on the same hardware: a cost argument for the GPU stages (v9, v13), on top of latency.
+  - Devanagari costs 4.47 tokens per word on real replies, more than F3's 3.75 from one sentence.
+  - Roman replies keep "Fryday" spelled right (Devanagari gave फ्रिडे / फ्रेडे), but use more digits despite the prompt ("30 degree", "1800 km", "1970"). The normaliser and transliterator must handle digits in Roman text.
+  - Both scripts produce made-up facts (a 4B model problem, v7a/v11), not script-specific.
+  - n = 24 per side, one session, one machine: the gap is far bigger than the run-to-run spread seen so far, but the tails weren't checked.
+- **Decision:**
+  - Step 2 goes ahead (the saving clears the 150 ms bar; result: see the step 2 entry above, Devanagari kept): pick a Roman → Devanagari transliterator, measure its latency on real replies, and listen to Kokoro read them. Roman wins only if transliteration costs well under 250 ms and the speech isn't worse.
+  - The input side of option A (Roman ASR via Oriserve, or Devanagari → Roman after Whisper) is part of the same decision.
+  - HLD unchanged until step 2.
+
+## 2026-10-21: Silero VAD hands-free endpointing: min silence 300 vs 500 vs 800 ms (v5 build 2, partial)
+- **Question:** what minimum silence ends a turn without cutting Hinglish sentences at a thinking pause?
+- **Setup:** `silero-vad` 6.2.3 via `VADIterator` (threshold 0.5, silence below 0.35, 100 ms padding), 512-sample (32 ms) frames at 16 kHz from `sd.RawInputStream(blocksize=512)`. Run with `FRYDAY_HANDS_FREE=1 FRYDAY_VAD_MIN_SILENCE_MS=… make talk`. Planned protocol: 5 fixed sentences, each with a deliberate pause, at each threshold.
+- **Prediction (owner):** 2 of 5 cut off at 300 ms; 500 ms wins.
+- **Result:**
+  - Silero costs **0.46 ms per 32 ms frame** on the M5 CPU (≈ 1.4% of real time); the model loads in 28 ms.
+  - **300 ms sometimes cuts sentences in the middle** (owner's run, qualitative). Counts weren't recorded, and 500 and 800 ms weren't run.
+  - From the source: at a 500 ms setting, `end` fires about **544 ms** after the silence begins (17 quiet frames), plus model fade. The voice-to-voice readout adds the nominal 500 ms, so it understates by about 50–100 ms.
+- **Decision:** keep **500 ms** as the default, not yet measured. Re-run the 5-sentence protocol at 500 and 800 ms when barge-in lands. Semantic turn detection is production gap #32.
+
+## 2026-10-21: Short first chunk: TTS starts on the first clause or ~6 words (v5 build 1)
+- **Question:** F9 showed sentence aggregation is 68% of first token → first audio. How much does cutting the first chunk early save?
+- **Setup:** `app/src/fryday/voice.py` with `FIRST_CHUNK_MIN_WORDS=3` and `FIRST_CHUNK_MAX_WORDS=6`. It cuts at `,;:` after 3 or more words, otherwise after 6 words, and never next to a digit or ₹. Only the first chunk is affected. Measured with `spikes/learn/f9_budget.py` (medians), Qwen3-4B 4-bit via MLX plus Kokoro-82M on the M5.
+- **Result:**
+
+  | | Before | After |
+  |---|---|---|
+  | Aggregation | 844 ms | 519 ms |
+  | Kokoro (first chunk) | 397 ms | 297 ms |
+  | First token → first audio | 1,241 ms | **816 ms** (−34%) |
+
+  - Kokoro is faster too, because a shorter chunk means less audio to synthesise.
+  - The whole turn now fits a budget of about 1.6 s.
+  - **Not ear-tested.** Whether a 6-word cut sounds choppy is unverified, and the owner skipped the check.
+- **Decision:** keep the early cut. Re-check how it sounds when the hands-free loop (v5 build 2) is used for real.
+
+## 2026-10-21: asyncio pipeline toy: backpressure, barge-in, and the blocking trap (v5 learn 1)
+- **Question:** in an async voice pipeline, how fast does barge-in stop the audio, and what does a blocking model call do to the event loop?
+- **Setup:** `spikes/learn/v5_asyncio_toy.py`, all fakes:
+  - an LLM producing a word every 30 ms → chunker → TTS (200 ms `time.sleep` standing in for Kokoro) → audio queue (`maxsize=1`) → speaker (1 s per chunk);
+  - a mic ticking every 50 ms;
+  - barge-in at 1.4 s (moved from 1.0 s so it lands during a TTS call).
+  - Run A: TTS via `asyncio.to_thread`. Run B: TTS called directly.
+- **Prediction (owner):** audio stops after the current TTS call finishes.
+- **Result:**
+
+  | | A: `to_thread` | B: direct (blocking) |
+  |---|---|---|
+  | Mic stalls | none | ~230 ms on every TTS call (4×) |
+  | Barge-in timer | 1 ms late | **134 ms late** |
+  | Audio stops after `cancel()` | 0.5 ms | 0.1 ms (but the cancel itself came late) |
+  | TTS thread after cancel | kept running 140 ms; result discarded | — |
+  | Backpressure (queue full, TTS waits) | yes, at 0.74 s | yes |
+  | Queued chunks left to drop | 1 | 1 |
+
+- **Findings:**
+  - With `to_thread`, cancellation hits the task at its `await`, so the audio stops instantly. The prediction was wrong here.
+  - The **thread can't be cancelled**: the compute finishes and is wasted (GPU time the next reply waits for).
+  - A direct blocking call freezes the whole loop. The mic and VAD are starved, and barge-in is noticed late; there, the prediction is exactly right.
+- **Decision for v5:**
+  - Every in-process model call (Whisper, Kokoro, VAD) goes through `to_thread`.
+  - On barge-in, cancel the reply task **and** drop the queued audio.
+  - Keep TTS chunks short to limit orphaned compute.
+
+## 2026-10-21: Where does "first token → first audio" go? The latency budget (F9 toy)
+- **Question:** of the ~1.3 s between the LLM's first token and the first audio, how much is waiting for the first full sentence and how much is Kokoro?
+- **Setup:**
+  - `spikes/learn/f9_budget.py`.
+  - `mlx_lm.server` with Qwen3-4B 4-bit, warm, plus Kokoro `hf_alpha` in-process, warm.
+  - 5 new Hindi questions with the voice system prompt, after one warm-up question that is dropped.
+  - Each first sentence (from `sentences()`) goes through `normalise()`, then the full `tts.speak()`. Kokoro returns a whole sentence at once.
+- **Prediction (owner):** mostly Kokoro.
+- **Result** (ms, median of 5): time to first token 334 · **A. sentence aggregation 844** · **B. Kokoro 397** · first token → first audio **1,241**.
+
+  | Question | First token | A. Aggregation | B. Kokoro | Words | Audio |
+  |---|---|---|---|---|---|
+  | आज मौसम कैसा है? | 339 | 851 | 391 | 9 | 4.0 s |
+  | मुझे कल सुबह सात बजे याद दिलाना। | 265 | 705 | 363 | 7 | 3.6 s |
+  | एक अच्छी किताब बताओ। | 457 | 768 | 397 | 8 | 3.8 s |
+  | चाय बनाने का आसान तरीका बताओ। | 334 | 1,663 | 594 | 21 | 7.6 s |
+  | तुम कौन हो? | 115 | 844 | 454 | 8 | 4.1 s |
+
+- **Findings:**
+  - The prediction was wrong. **Aggregation is 68%**: about 105 ms per Devanagari word (~3.75 tokens per word at ~36 tokens/s), so a 21-word first sentence costs 1.7 s.
+  - Kokoro is about 10× faster than real time, with ~300 ms of fixed overhead (8 words ≈ 400 ms, 21 words ≈ 600 ms).
+  - The cold-prompt time to first token is ~330 ms. The 90 ms in the 2026-10-19 entry reused a cached prompt.
+  - Budget compared with the voiceaiandvoiceagents.com primer (§5.1: about 1,300 ms typical, 1,500 ms target, 500 ms human turn gap):
+
+    | Stage | Primer | Fryday |
+    |---|---|---|
+    | ASR | — | 450 ms |
+    | Time to first token | 650 ms | 330 ms |
+    | Aggregation + TTS | 140 ms | 1,240 ms |
+    | Endpointing and network | — | not yet (push-to-talk, local) |
+    | **Total** | ~1,300 ms | **≈ 2.0 s** |
+
+- **Decision for v5, by impact:**
+  1. A short first chunk (~4 words), with aggregation expected to fall from ~850 ms to ~400 ms.
+  2. Measure Roman replies (~2.5× fewer tokens).
+  3. Leave Kokoro as is.
+
 ## 2026-10-20: Script convention, Whisper → Devanagari vs Oriserve → Roman Hinglish (v4 build, S0-8)
 - **Question:** which ASR output script should Fryday use? Is the Hinglish fine-tune more accurate than off-the-shelf Whisper?
 - **Setup:**

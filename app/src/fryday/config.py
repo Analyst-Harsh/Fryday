@@ -79,6 +79,11 @@ class Settings(BaseSettings):
     # Messages kept after the system prompt; older ones are dropped so the
     # prompt never outgrows the context window.
     max_history_messages: int = Field(default=20, ge=0)
+
+    # Voice: hands-free ends a turn when Silero VAD hears this much silence after
+    # speech. Lower answers sooner but cuts off people who pause mid-sentence.
+    hands_free: bool = False
+    vad_min_silence_ms: int = Field(default=500, ge=100)
     system_prompt: str = "You are Fryday, a helpful assistant. Reply in short, friendly Hinglish."
 
     @model_validator(mode="after")

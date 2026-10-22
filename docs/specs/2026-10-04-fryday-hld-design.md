@@ -103,13 +103,15 @@ Fryday is a Hinglish tap-to-talk voice assistant whose real purpose is **learnin
 6. Reply tokens → chunks (a short first chunk of ~6 words, then sentences) → normaliser (out) → `tts` → audio emitted **in order** with `turn_id`/`chunk_seq`. The queue is bounded, so backpressure pauses TTS.
 7. Background: memory extraction, audit and history rows; audio is saved only with consent.
 
-**Barge-in**: tapping the mic during playback stops the reply and starts listening. It does five things:
+**Barge-in**: tapping the mic during playback stops the reply and starts listening. It does four things:
 1. bumps the turn epoch, so the client drops stale chunks;
 2. closes the LLM stream (vLLM aborts the request);
 3. cancels in-flight Triton requests (**cancellation is gRPC-only in Triton; the Python and vLLM backends support early termination**);
 4. marks the turn interrupted.
 
 Tap-to-talk means no VAD runs on echoing audio in v1.
+
+On the Mac (v5: `turns.py` turn-taking, `mic.py` listeners, `speaker.py` playback, wired in `talk.py`) the turn manager is asyncio: one task per turn; ASR and TTS run in `to_thread`, and `LLMClient.reply()` runs the blocking stream on its own thread (one thread per stream keeps its trace open and closed in the same place). The epoch is `turn_id`: the speaker writes in 50 ms pieces and drops any piece from an older turn, which also covers audio an orphaned TTS thread finishes after cancel. A VAD start (hands-free, headphones only) or Enter (push-to-talk) triggers barge-in.
 
 **Warm-up**: each backend runs one warm-up inference per model before its readiness probe goes green, because Triton cold start and the first TensorRT/CUDA-graph call take seconds.
 
@@ -140,7 +142,7 @@ Exact IDs were checked against model cards on 2026-10-04 unless marked *(verify)
 |---|---|---|---|---|
 | ASR | `openai/whisper-large-v3-turbo` (MIT); `Oriserve/Whisper-Hindi2Hinglish-Apex` (Apache-2.0, outputs Roman Hinglish), `…-Prime` as the alternative; streaming-native: `nvidia/nemotron-3.5-asr-streaming-0.6b` (OpenMDW, ungated, Hindi included) | LoRA for named entities; quantise | CT2 int8 or ONNX (Python/ORT backend) | CT2 fp16/int8 via the Triton **Python backend** (no official CT2 backend); TensorRT-LLM Whisper encoder as an experiment |
 | LLM | `Qwen/Qwen3-4B-Instruct-2507` (Apache-2.0, ungated) as the default; any newer **ungated** 2026 3–4B release with tool calling may join the baseline | LoRA SFT for tool calls and spoken Hinglish; merge; 4-bit | MLX 4-bit via `mlx_lm.server` (OpenAI-compatible, streaming; tool-call parsing per model and streaming+tools **unverified** → spike S0-3; validate-and-repair) | vLLM AWQ/GPTQ (verify on L4) |
-| TTS | `nvidia/magpie_tts_multilingual_357m` (NVIDIA Open Model License, ungated, Hindi; batched/sliding-window synthesis, **not** native streaming) as the default; fallback `facebook/mms-tts-hin` *(licence verify)* | Fix one voice; no fine-tuning in v1 | PyTorch/NeMo in the Triton Python backend | Same, as chunked unary calls; ONNX/TRT is a stretch (unproven) |
+| TTS | **`hexgrad/Kokoro-82M`** (Apache-2.0) via `mlx-community/Kokoro-82M-bf16`, voice `hf_alpha`, Devanagari input (decided in v3, 2026-10-16/20, EXPERIMENTS). Alternative for the GPU stage: `nvidia/magpie_tts_multilingual_357m` (NVIDIA Open Model License, Hindi; batched/sliding-window, **not** native streaming); fallback `facebook/mms-tts-hin` *(licence verify)* | Fix one voice; no fine-tuning in v1 | PyTorch/NeMo in the Triton Python backend | Same, as chunked unary calls; ONNX/TRT is a stretch (unproven) |
 | Embeddings | `BAAI/bge-m3` (MIT); fallback `intfloat/multilingual-e5-small` (MIT) on the Mac | None; chosen as the easy TensorRT target | ONNX | TensorRT fp16 |
 | VAD (later) | Silero VAD (MIT) | — | CPU | — |
 
@@ -160,7 +162,7 @@ Exact IDs were checked against model cards on 2026-10-04 unless marked *(verify)
   - **ASR: off-the-shelf Whisper large-v3-turbo with `language="hi"`, which outputs Devanagari.** No fine-tune.
     - On 100 MUCS clips with matched decoding, it tied with Oriserve's Roman Hinglish fine-tune (median skeleton CER 31.1% vs 31.3%).
     - It was about 3× faster here, it's already in the stack, and it produced no junk tokens (Oriserve: stray `nan`, Cyrillic).
-  - The script of the ASR **input** barely affects latency: the user's ~10 words are prefill. The 2.5× Devanagari token cost is in the **reply**. Whether replies should be Roman plus transliteration (e.g. AI4Bharat IndicXlit *(verify)*) before TTS is a v5 latency question.
+  - The script of the ASR **input** barely affects latency: the user's ~10 words are prefill. The 2.5× Devanagari token cost is in the **reply**. **Replies stay Devanagari (decided 2026-10-22, v5, EXPERIMENTS).** Roman replies reach the first chunk 251 ms sooner with half the tokens, but IndicXlit (CTranslate2 port, raw top guess) spells about 1 in 5 words wrong, mostly short common ones (se → एसई, bas → बीएएस), so Kokoro would read garbage. Revisit with a transliterator that reranks its guesses with a word list (as the official engine does).
   - Known gap: Whisper sometimes writes English words in Latin script ("document"). That's harmless for the LLM, but if the reply copies them, Kokoro's Hindi voice misreads them.
 - **Money safety does not depend on TTS:** amounts are always shown as text on the approval card.
 
@@ -397,6 +399,7 @@ Exact IDs were checked against model cards on 2026-10-04 unless marked *(verify)
 - **Nsight counters** need SYS_ADMIN.
 - **Ungated models:**
   - Qwen3-4B-Instruct-2507 (Apache-2.0).
+  - Kokoro-82M (Apache-2.0), the TTS in use since v3.
   - Magpie multilingual 357M (NVIDIA Open Model License).
   - Whisper large-v3-turbo (MIT).
   - Oriserve Whisper Hindi2Hinglish Apex/Prime (Apache-2.0).

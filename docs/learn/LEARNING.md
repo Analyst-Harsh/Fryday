@@ -28,6 +28,7 @@ flowchart LR
 | 2026-10-13 | (F8 quiz, not attempted; answers were shown instead) (1) Explain the voice → Whisper journey: sampling, resampling to 16 kHz, spectrogram, mel, log, and why each step is needed. (2) What happens if 48 kHz audio is sent to Whisper labelled as 16 kHz? (3) What goes wrong with `x[::3]` and no filter, and where does a 12 kHz whistle land? | due 2026-10-20 | due 2026-11-10 |
 | 2026-10-16 | (v3 learn 1 quiz, weak) Which TTS stages are rules and which are neural (normalisation, G2P, acoustic model, vocoder)? Why is a silently dropped ₹ dangerous for Fryday, and which layer catches it? | due 2026-10-23 | due 2026-11-13 |
 | 2026-10-18 | (v3 learn 2 quiz, skipped) (1) Explain MOS, why one listener's rating means little, and what a ±0.44 95% CI tells you. (2) Give two reasons UTMOS ranked mispronounced `hi_roman` above `hi_deva`. (3) "सात" was flagged missing in every Hindi file: whose fault, and how do you fix the check without hiding real TTS errors? | due 2026-10-25 | due 2026-11-15 |
+| 2026-10-22 | (v5 builds, why-questions not answered) (1) Why does `interrupt()` call `allow()` before `cancel()`, and would you hear a difference if they were swapped? (2) `played()` counts bytes **written** to the device: is the heard-text cut early or late, and by about how much? (3) Why did a Devanagari question pull "Roman" replies back into Devanagari, and what does that mean for a user who types in Devanagari? (4) Why is `stop` a `threading.Event` and not an asyncio object? | due 2026-10-29 | due 2026-11-19 |
 
 ## Entry template
 ```markdown
@@ -41,6 +42,120 @@ flowchart LR
 ```
 
 ---
+
+### 2026-10-22: v5 builds 1–4 (first chunk, VAD, turn manager + barge-in, heard-text) and the reply-script spike
+- **Built or watched:**
+  - Build 1 (10-21): short first chunk, so TTS starts on the first clause or about 6 words. First token → first audio went from 1,241 to 816 ms.
+  - Build 2 (10-21): Silero VAD hands-free mode (`FRYDAY_HANDS_FREE=1`). The idle buffer is capped, after a ~115 MB/hour leak.
+  - Builds 3+4: an asyncio turn manager with barge-in, and a `reply()` seam (the LLM runs on its own thread, and deltas cross back through `asyncio.Queue` + `call_soon_threadsafe`). `talk.py` is split into `mic.py`, `speaker.py`, `turns.py` and `VoiceSession`.
+  - Heard-text: after barge-in, history keeps what was played (whole chunks, plus a share of the cut one by bytes), not everything generated.
+  - Spikes: Roman vs Devanagari replies, then IndicXlit transliteration (EXPERIMENTS 2026-10-22). Replies stay Devanagari.
+  - Real mic run: barge-in and hands-free work (the owner tested it; latency not measured).
+- **Predicted vs actual:**
+  - Roman first chunk sooner by 100–300 ms (b): **−251 ms** ✅ (after a negative first run, when Devanagari questions pulled "Roman" replies back into Devanagari 19/24 times).
+  - VAD 300 ms: "can cut sentences in the middle sometimes"; 500/800 ms not run yet.
+- **Surprised me:**
+  - `task.cancel()` doesn't kill anything. It raises `CancelledError` at the task's next `await`, and threads keep running. Stopping takes three mechanisms: cancel (the coroutine), the turn id (queued audio) and the `stop` Event (the LLM stream).
+  - The turn task usually **finishes before playback ends** (TTS renders ~20x faster than real time), so most barge-ins cancel nothing. They only drop queued audio. The history fix therefore had to run at the start of the next turn.
+  - `on_speech` fires at the start of every utterance, not just interruptions. That's harmless: interrupt is a no-op when nothing is playing.
+  - A small model copies the **user's** script over the system prompt's instruction.
+  - A fast transliterator (22 ms) was useless: short words came out as English letter names (se → एसई). Check quality before latency.
+- **I can now explain:**
+  - why the mic thread never touches asyncio objects (`call_soon_threadsafe`), and why `asyncio.Queue` and not `queue.Queue` sits on the loop side;
+  - what a turn id (epoch) is for, and why `allow()` comes before `cancel()`;
+  - VAD start/end events, padding, and why the idle buffer must be capped;
+  - why Devanagari costs ~2x the tokens (4.47 vs 2.20 tokens per word) and what that means for latency and GPU cost.
+- **Still don't get:** no quiz (owner's choice). Open why-questions were added to the table above.
+- **Tomorrow's first step:** v5 build 5, the WebSocket gateway. ~15 min learn (WS framing, binary audio frames, auth in the first message, Origin check), then a FastAPI `/ws` endpoint that feeds the existing `TurnManager` / `VoiceSession`.
+
+### 2026-10-21: v5 learn 3: turn detection, tail latency, admission control
+- **Built or watched:** live explanation only.
+  - VAD's four knobs (threshold, min speech, min silence, prefix padding) and how they trade cut-offs against latency;
+  - VAD + Smart Turn for endpointing and barge-in;
+  - p50 vs p95 (mean 1,440 vs p50 1,075 vs p95 4,800 on 10 turns) and where tails come from;
+  - admission control: concurrency limit, load shedding, bounded queues with timeouts, per-user caps, circuit breaker.
+- **Predicted vs actual:** no predictions.
+- **I can now explain:**
+  - why min silence is the biggest latency knob and why Smart Turn exists;
+  - why SLOs use p95;
+  - why rejecting fast under overload beats serving everyone slowly.
+- **Still don't get:** no quiz (owner's choice).
+- **Tomorrow's first step:** v5 build 1, the short first chunk.
+
+### 2026-10-21: v5 learn 1–2: asyncio, cancellation, and getting audio over the network
+- **Built or watched:**
+  - Corey Schafer's AsyncIO video (most of it).
+  - Live explanations:
+    - event loop, tasks, `asyncio.Queue` and backpressure, cooperative cancellation;
+    - why `async def` doesn't make compute non-blocking (`to_thread`, or a model server, instead);
+    - TCP vs UDP head-of-line blocking; WebSocket vs WebRTC; jitter buffers; echo cancellation.
+  - Toy `spikes/learn/v5_asyncio_toy.py` (EXPERIMENTS 2026-10-21).
+- **Predicted vs actual:**
+  - Predicted audio stops after the current TTS call. With `to_thread` it stopped in 0.5 ms, but the thread's compute ran on for 140 ms.
+  - With a blocking call, barge-in was 134 ms late and the mic stalled ~230 ms per call.
+- **Surprised me:**
+  - Cancelling a task doesn't cancel its thread.
+  - For live voice, late audio is worse than lost audio.
+- **I can now explain:**
+  - concurrency vs parallelism;
+  - where a coroutine gives up control;
+  - backpressure with bounded queues;
+  - what `cancel()` really does;
+  - why WebSocket is fine on localhost but WebRTC is right for real networks;
+  - jitter buffer trade-offs (smoothness vs latency);
+  - how AEC stops Fryday interrupting itself;
+  - why `turn_id` lets the client drop stale audio.
+- **Still don't get:** no quiz (owner's choice).
+- **Tomorrow's first step:** v5 learn 3, VAD and turn detection in depth, p50 vs p95, admission control.
+
+### 2026-10-21: F session 9 (learn): real-time voice systems
+- **Built or watched:**
+  - [Voice AI & Voice Agents: An Illustrated Primer](https://voiceaiandvoiceagents.com/), sections 4, 5.1, 5.7, 5.8 and 5.9.
+  - Live explanation: VAD vs Smart Turn; why production uses Pipecat and Nemotron, and why we build by hand first.
+  - Toy `spikes/learn/f9_budget.py`: Fryday's latency budget, split by stage.
+  - HLD fixed: Kokoro is the TTS default.
+- **Predicted vs actual:** predicted Kokoro dominates the first audio. It doesn't: waiting for the first sentence is 68% (844 ms) and Kokoro 32% (397 ms).
+- **Surprised me:**
+  - Fryday is ≈ 2.0 s from voice to voice, already near the primer's 1,500 ms target.
+  - Our first token (~330 ms) beats a cloud LLM's ~650 ms.
+  - Each Devanagari word costs ~105 ms of waiting.
+- **I can now explain:**
+  - the cascaded loop vs speech-to-speech models;
+  - each stage of a voice latency budget (mic, codec, jitter buffer, endpointing, ASR, first token, aggregation, TTS);
+  - VAD (is someone speaking?) vs Smart Turn (have they finished?) and how they chain;
+  - why the short first chunk is the biggest v5 win.
+- **Still don't get:** no quiz (owner's choice).
+- **Tomorrow's first step:** v5 learn 1, asyncio, queues, backpressure and cancellation.
+
+### 2026-10-20: v3 builds 1–3 and v4 learn 1 + S0-8 build (long day)
+- **Built or watched:**
+  - **v3 build 1** (2026-10-19): the speech-to-speech skeleton `make talk`: push-to-talk → Whisper → streamed Qwen → sentence chunks → Kokoro → speaker thread. Walkthroughs of `talk.py`, `asr.py`, `tts.py` and `voice.py`: the PortAudio callback thread, queue + sentinel + `task_done`, daemon threads, `yield from`, sentence chunking. Removed the topical examples from the voice prompt (the model kept talking about the gym).
+  - **v3 build 2:** `normalise.py` with 21 golden tests (₹, times, decimals, Indian commas). Found that misaki's Hindi path is just espeak-ng, which reads plain numbers well, so the rules only fix what espeak breaks.
+  - **v3 build 3:** a blind voice pick from 4 Hindi voices.
+  - **v3 interview, partial:** the design question only (TTS for 10k users), plus priority queues / EDF scheduling (added to v8).
+  - **v4 learn 1:** HF Audio Course ch.5; hops, frames and log-mel; Whisper's 30 s window and long-form sliding; toy `v4_asr_toy.py`.
+  - **v4 build:** `v4_script_eval.py`, Whisper (Devanagari) vs Oriserve (Roman) on 100 MUCS clips.
+- **Predicted vs actual:**
+  - Voice: predicted `hf_beta`, picked `hf_alpha` blind.
+  - 3 s vs 30 s ASR time: predicted the same, and it was (0.45 s), but the test was confounded (Whisper drops repeated speech).
+  - Silence: predicted invented words, and got "झाल झाल".
+  - S0-8: predicted Whisper wins. It won 66/29, then **tied** once Oriserve got the same loop guard.
+- **Surprised me:**
+  - Our "ASR ≈ 2 s" figure was wrong: warm ASR is 0.45 s. The first full sentence (~1.3 s) is the real wait.
+  - Python's `\b` doesn't treat Hindi vowel signs as letters, so `बजे\b` never matched.
+  - A 16-point model gap was mostly our evaluation harness (no temperature fallback), not the model.
+  - The token cost of Devanagari matters in the reply, not the ASR input.
+- **I can now explain:**
+  - how the speech loop overlaps (TTS of sentence 2 runs while sentence 1 plays);
+  - why rules, not models, normalise money;
+  - production TN (tagger plus verbaliser, WFST);
+  - hop, window and 100 frames per second;
+  - Whisper's sliding window for long audio;
+  - dynamic vs continuous batching;
+  - EDF priority for first audio chunks;
+  - why fine-tunes can lose to base models.
+- **Still don't get:** quiz skipped (owner's choice). No new re-ask rows.
+- **Tomorrow's first step:** F9, real-time voice systems: cascaded vs speech-to-speech, and the latency budget table filled with Fryday's measured numbers.
 
 ### 2026-10-18: v3 learn 2: judging TTS quality, and codecs
 - **Built or watched:**
