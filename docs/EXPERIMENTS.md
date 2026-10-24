@@ -12,6 +12,25 @@ Every result goes here, **including negative ones** (roadmap working principles)
 - **Decision:** what changes because of this (HLD/roadmap update, next step).
 ```
 
+## 2026-10-24: Browser end to end, rerun after the session.ts / gateway.py splits (v5 close)
+- **Question:** does the browser path still work after the PR #8 readability splits?
+- **Setup:** same as 2026-10-22: `make llm` + `make serve` (started fresh), the rebuilt React app, headless Chromium with the Kokoro-spoken "आज मौसम कैसा है?" as the fake mic. Commit `daedc18`. **1 turn (cold).**
+- **Result (from the app's latency drawer, n=1):**
+
+  | Stage | Time |
+  |---|---|
+  | VAD wait | 500 ms |
+  | ASR | 471 ms |
+  | LLM first token | 576 ms |
+  | First audio, server | 1.79 s |
+  | First audio, browser | 2.32 s |
+  | You stop → Fryday speaks | **2.76 s** |
+
+  - **Pass:** the transcript was right (मोसम again), the reply was spoken in Devanagari, and the app went back to "Listening".
+  - **Cold turn: 2.76 s, against 9.99 s on 2026-10-22** (ASR 0.47 s vs 5.13 s). One sample, so this proves nothing yet. It may be a warm OS file cache; not checked.
+  - The reply made up the weather ("बारिश वाला है"): there are no tools yet (production gap #27).
+- **Decision:** the splits are verified end to end. v5 is closed for now; the real-mic session and the p95 run are parked with the other v5 leftovers.
+
 ## 2026-10-22: Browser end to end: hands-free over the WebSocket gateway (v5 build 5)
 - **Question:** does the full browser path work (mic → downsample → WS → Silero VAD → Whisper → LLM → Kokoro → WS → Web Audio), and what does it cost compared with the terminal?
 - **Setup:**
