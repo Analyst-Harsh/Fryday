@@ -28,7 +28,8 @@ The goal is to be interview-ready for AI engineering roles while building Fryday
 |---|---|
 | Rework when v8 swaps backends | Seam rule: every model sits behind one typed function or Protocol with a contract test from v0 |
 | Hindi TTS quality stalls v3 | 2-session timebox; fall back to MMS, or English audio plus Devanagari text on screen |
-| A fun assistant at v6 absorbs all the time, and the deep topics never happen | Checkpoint after v6: Part B is mandatory |
+| A fun assistant at v6 absorbs all the time, and the deep topics never happen | Retired 2026-10-24: Part B and Part C now run before v1 |
+| Model engineering absorbs all the time, and the assistant never gets tools | The parked v5 items and v1 come straight after v14; v11/v13 use style data, so they don't wait on v1 |
 | GPU cost | $100 cap, learning and dry runs before renting, auto `gpu-down`, drop-first stretch list |
 | Young tools (vllm-metal, Triton arm64, MLX DPO) | 1-session timebox each, with the written fallback in the version |
 
@@ -36,13 +37,23 @@ The goal is to be interview-ready for AI engineering roles while building Fryday
 
 Sessions are about 1.5 h. "L" is learn sessions, "B" is build sessions, and "I" is the interview session that closes each version.
 
+> **Re-ordered 2026-10-24 (owner's choice): LLM hosting and tuning first, then tools.** The owner wants to learn LLM hosting, Triton, vLLM and fine-tuning in depth before the agent work. After v5 the order is now:
+> **F4–F6 → v7a (lite) → v9 → v8 → v10 → v11 → v12 → v13 → v14**, then back to the assistant: **v1 → v2 → v6 → v7b → v15 → v16**.
+> - **v5 is closed for now.** Its parked items: Postgres + Alembic + the minute cap, load shedding, the circuit breaker, per-hop spans, the S0-2 memory-fit run, the real-mic session and the v5 interview. They run before v1.
+> - **v7a is slimmed** to the LLM sets. The ASR frozen sets move to just before v11; the refusal/jailbreak set moves to just before v6.
+> - **v9 goes deeper:** you build a mini-vLLM on your own tiny GPT. **v8 goes deeper:** an LLM served on Triton with a decoupled (streaming) backend. v9 now comes before v8, so Triton can be compared with an engine you've already built.
+> - **v11 is retargeted** from tool-call data (v1 isn't built yet) to the **Hinglish voice-reply style**. v13 trains on the same data unless v1 has landed by then.
+> - **v13 and v14 go deeper** on vLLM on CUDA and on Triton with the vLLM and TensorRT-LLM backends.
+> - The "checkpoint after v6" risk row no longer applies: Part B now runs first.
+> - **Nothing is cut.** Version numbers keep their names, so links and history stay valid. The tables below keep their old grouping; this note gives the run order.
+
 ### Part 0: Foundations (Mac)
 | # | Version | L+B+I | Demo |
 |---|---|---|---|
 | F | **Architecture + core theory** (§3), including a tiny GPT built from scratch | 10 | You explain one Fryday turn on your own diagram, and your own mini-GPT generates text |
 
 ### Part A: Build the assistant (Mac)
-> **Re-ordered 2026-10-11 (owner's choice): voice first, then tools.** After v0, the order is F8 → v3 → v4 → F9 → v5 → v1 → v2 → v6. Version numbers keep their names, so links and history stay valid. **Nothing is cut.** Every learn session, resource, learner-writes item, spike and interview stays; only the order changes. The v5 voice bot has no tools; v1 later puts the agent behind v5's `reply` seam, so the voice code doesn't change.
+> **Re-ordered 2026-10-11 (owner's choice): voice first, then tools.** After v0, the order is F8 → v3 → v4 → F9 → v5 → v1 → v2 → v6. Version numbers keep their names, so links and history stay valid. **Nothing is cut.** Every learn session, resource, learner-writes item, spike and interview stays; only the order changes. The v5 voice bot has no tools; v1 later puts the agent behind v5's `reply` seam, so the voice code doesn't change. *(The order after v5 is superseded by the 2026-10-24 re-order above.)*
 
 | # | Version | L+B+I | Demo |
 |---|---|---|---|
@@ -59,10 +70,10 @@ Sessions are about 1.5 h. "L" is learn sessions, "B" is build sessions, and "I" 
 ### Part B: Model engineering (Mac): the core interview depth
 | # | Version | L+B+I | Demo |
 |---|---|---|---|
-| v7a | Evaluation: frozen sets, judge, gate, `models.lock` | 2+5+1 | `make eval` prints a score table |
+| v7a | Evaluation: frozen sets, judge, gate, `models.lock` (lite: LLM sets first; ASR and refusal sets before v6) | 2+3+1 (+2 later) | `make eval` prints a score table |
 | v7b | Observability + operations: Langfuse, SLOs, backups, supply chain | 2+5+1 | Traces visible; an injected alert fires |
-| v8 | Model serving: ONNX → Triton | 2+7+1 | The app runs with models behind Triton (or ORT) |
-| v9 | LLM serving internals + vLLM | 3+4+1 | Goodput and TTFT vs concurrency curve |
+| v8 | Model serving: ONNX → Triton, including an LLM on Triton | 2+8+1 | The app runs with models behind Triton (or ORT); tokens stream from Triton |
+| v9 | LLM serving internals + vLLM, including your mini-vLLM | 3+7+1 | Your mini-vLLM's tokens per step and utilisation, static vs continuous batching |
 | v10 | Quantisation | 2+4+1 | Quality, size and speed table |
 | v11 | Fine-tuning I: data + LoRA + DPO on the Mac | 3+9+1 | Before/after on the eval |
 
@@ -70,18 +81,15 @@ Sessions are about 1.5 h. "L" is learn sessions, "B" is build sessions, and "I" 
 | # | Version | L+B+I | Demo |
 |---|---|---|---|
 | v12 | CUDA/GPU fundamentals (you write a kernel) + training-systems concepts + GPU ops | 3+5+1 | Your kernel vs cuBLAS; tunnel up; dead-man switch tested |
-| v13 | Fine-tuning II + quantisation at scale + vLLM on CUDA + multi-LoRA | 2+8+1 | Promoted artefacts in `models.lock` |
-| v14 | TensorRT + Triton on GPU + profiling | 2+9+1 | PyTorch vs ONNX vs TRT table, Nsight timeline |
+| v13 | Fine-tuning II + quantisation at scale + vLLM on CUDA (deep) + multi-LoRA | 2+9+1 | Promoted artefacts in `models.lock`; your style adapter served by vLLM |
+| v14 | TensorRT + Triton on GPU (vLLM and TensorRT-LLM backends) + profiling | 2+10+1 | PyTorch vs ONNX vs TRT table, Triton backends table, Nsight timeline |
 | v15 | Prove it: load, cost, chaos, demo | 1+5+1 | Recorded demo + benchmark README |
 | v16 | Interview capstone (§6) | 6 | 3 mock system-design rounds, resume bullets |
 
-**Total:** about **177 sessions**. The default pace is 1.5 h a day, **5 days a week**, which is about 8 months, or about 10 with slip. At 6 days a week it is about 7 months. Along the way:
+**Total:** about **183 sessions** (177 before the 2026-10-24 deepening of v8, v9, v13 and v14). From v5's close, the hosting + tuning block (F4–F6 through v14) is about **85 sessions, roughly 17 weeks with no slip**; then the ~4 parked v5 sessions, then tools (v1). The default pace is 1.5 h a day, **5 days a week**, which is about 8 months, or about 10 with slip. At 6 days a week it is about 7 months. Along the way:
 - a text assistant runs at about **week 5** (done: v0);
 - the voice hero video lands about **6 weeks after v0** (30 sessions: F8, v3, v4, F9, v5). It was about 10 weeks before the 2026-10-11 re-order;
-- tools (v1) follow about 2 weeks later;
-- Part B runs from about week 16 to week 26.
-
-**Checkpoint after v6:** Part B is mandatory, because it holds most of the interview depth.
+- since 2026-10-24, Parts B and C run next (about 17 weeks), then the ~4 parked v5 sessions, then tools (v1).
 
 **GPU budget:** a hard cap of **$100** (you can change it in v12). That is roughly 60–100 GPU-hours on a 24 GB L4-class card, at about $0.5–1/h; verify the rates in v12. Every sprint has a written hour limit, and `gpu-down` fires automatically at that limit. If the cap would be exceeded, drop stretch items, never the checklist.
 
@@ -90,7 +98,8 @@ Sessions are about 1.5 h. "L" is learn sessions, "B" is build sessions, and "I" 
 - E7 (one Triton vs separate servers);
 - speculative decoding;
 - DPO at scale;
-- Nemotron streaming ASR.
+- Nemotron streaming ASR;
+- the Triton + TensorRT-LLM backend (v14), after E8.
 
 **Learn spill rule:** if a version's learn sessions run short for its topic load, they may spill one session into the build block. The first build session of v5, v6 and v12 starts with a 20-minute toy.
 
@@ -106,7 +115,7 @@ Sessions are about 1.5 h. "L" is learn sessions, "B" is build sessions, and "I" 
 | v12 | GPU provider plus budget alert |
 
 **Why this order:**
-- Build the product first so every later concept has a home.
+- Build the product first so every later concept has a home. Since 2026-10-24 the voice product (v5) is that home, and Parts B and C run before tools (owner's choice).
 - Within Part A, voice comes before tools (owner's choice, 2026-10-11). The voice pipeline is the part the owner most wants to learn and build, and the reply seam lets the agent drop in later without changing the voice code.
 - Measure (v7a) before you change any model (v8–v11).
 - Learn serving on the Mac (v8, v9) before paying for a GPU.
@@ -119,7 +128,7 @@ Sessions are about 1.5 h. "L" is learn sessions, "B" is build sessions, and "I" 
 | S0-5 | v0, v3, v4, v2 (embedder ID and licence) |
 | S0-9 | v3 |
 | S0-8 | v3, v4 |
-| S0-2 | v5; re-run in v2 once the embedder (about 1.1 GB) is loaded |
+| S0-2 | v5 leftovers (parked, run before v1); re-run in v2 once the embedder (about 1.1 GB) is loaded |
 | S0-3 | v0, v1 |
 | S0-10 | v6 |
 | S0-1 | v8 |
@@ -132,6 +141,7 @@ Sessions are about 1.5 h. "L" is learn sessions, "B" is build sessions, and "I" 
 |---|---|
 | M0 | Spikes, as above |
 | M2 | v3, v4, v5 (now built before M1) |
+| *(2026-10-24: M3, M4 and M5 now run before M1)* | |
 | M1 | v1, v2, v6, v7a |
 | M3 | v10, v11, v13 |
 | M4 | v8, v14 |
@@ -158,7 +168,7 @@ Sessions are about 1.5 h. "L" is learn sessions, "B" is build sessions, and "I" 
 | Structured error taxonomy (user-facing vs retryable vs fatal); forward-only migrations with a written rollback note | Predictable failure behaviour |
 | Prompts versioned in git; prompt version logged on every trace | Debug "what changed?" |
 | Concurrency limit and load shedding at the gateway (v5); a circuit breaker plus a degrade path per backend (HLD §9) | Survive overload and dead backends |
-| Input and output guardrails: injection suite (v6), PII filter (v7b), refusal/jailbreak test set (v7a) | Safety you can show |
+| Input and output guardrails: injection suite (v6), PII filter (v7b), refusal/jailbreak test set (v7a, later part, before v6) | Safety you can show |
 | Container hygiene: non-root, multi-stage builds, digest-pinned images | Supply chain, attack surface |
 | Warm-up and cold-start time measured per model (v8) | Readiness honesty |
 
@@ -199,7 +209,7 @@ Each version adds its own rows as they come up.
 Each version lists what you **learn** (interview topics), what you **build**, the **production** points it adds, and the deep-detail **source** in the old plan.
 
 ### F: Foundations (10 sessions)
-> **Reordered 2026-10-10 (just-in-time learning).** Sessions 1–3 are done. Next comes **7 (hosting)**, then a short checkpoint, then **v0**. Sessions 4–6 (tiny GPT, modern architecture) move to just before **v9**, where attention internals and the KV cache become things you measure. Sessions 8 and 9 (speech, real-time) move to just before **v3** and **v5**. Since the 2026-10-11 re-order (voice first), that means F8 comes right after v0. Nothing is cut. The rule from here on: learn depth when the build needs it.
+> **Reordered 2026-10-10 (just-in-time learning).** Sessions 1–3 are done. Next comes **7 (hosting)**, then a short checkpoint, then **v0**. Sessions 4–6 (tiny GPT, modern architecture) move to just before **v9**, where attention internals and the KV cache become things you measure. Sessions 8 and 9 (speech, real-time) move to just before **v3** and **v5**. Since the 2026-10-11 re-order (voice first), that means F8 comes right after v0. Nothing is cut. The rule from here on: learn depth when the build needs it. *(Since 2026-10-24, F4–F6 run right after v5, before v7a.)*
 
 1. **The big picture.** Karpathy, *Intro to LLMs*. Claude walks you through architecture doc §1 and §4, and you draw your six-box diagram.
 2. **Neural nets refresher → transformers.** 3Blue1Brown's neural-network and transformer/attention videos. Covers embeddings, attention, MLP, softmax and residuals.
@@ -288,7 +298,7 @@ Each version lists what you **learn** (interview topics), what you **build**, th
   - RAG failure modes;
   - ColBERT and GraphRAG as concepts;
   - memory extraction.
-- **ONNX intro:** export the embedder and run a parity test against PyTorch.
+- **ONNX intro:** reuse v8's ONNX embedder (built first since the 2026-10-24 re-order) and add a parity test against PyTorch.
 - **Build:**
   - a pgvector memory table;
   - hybrid retrieval using Postgres full-text search plus vectors;
@@ -380,13 +390,15 @@ Each version lists what you **learn** (interview topics), what you **build**, th
   - confidence intervals and bootstrap;
   - release gates;
   - model provenance.
-- **Build:**
+- **Build (lite, 2026-10-24: 3 sessions now):**
   - a 200-case LLM frozen set;
-  - a refusal/jailbreak set;
-  - ASR frozen sets (MUCS/Kathbath plus the own-voice entity set) and a synthetic dev set;
+  - a **Hinglish voice-reply style set** (short, speakable replies in Devanagari, the HLD's reply script since 2026-10-22), so v10 and v11 have something to be scored on;
   - hosted baselines run offline;
   - `eval/gate.yaml`;
   - `models.lock`.
+- **Build (later, 2 sessions):**
+  - ASR frozen sets (MUCS/Kathbath plus the own-voice entity set) and a synthetic dev set: **before v11**, because the v11 ASR dry run and the v13 ASR LoRA are gated on them;
+  - a refusal/jailbreak set: **before v6**.
 - **Source:** old phase 6.
 
 ### v7b: Observability + operations
@@ -415,7 +427,10 @@ Each version lists what you **learn** (interview topics), what you **build**, th
   - request priority with batching: Triton `priority_levels` and queue policies (timeouts, max queue size), and why voice wants earliest-deadline-first (deadline = when the user's playback buffer runs dry; first chunks have none). Added 2026-10-20 from the v3 design question.
 - **Build:**
   - Arm64 CPU Triton (S0-1) gets a **1-session timebox**; if it fails, ORT goes behind the same contract.
-  - Embeddings, ASR and **TTS (Python backend)** go behind KServe v2.
+  - **An LLM on Triton (added 2026-10-24):** Qwen3-0.6B only (1.7B won't fit the 4 GB Docker cap), loaded on its own, in a Python backend in **decoupled mode**, so tokens stream over gRPC. Measure TTFT against `mlx_lm.server` (labelled CPU vs Metal, not like-for-like), and compare what Triton gives you (batching, metrics, ensembles) with what your v9 mini-vLLM does (KV cache, scheduling).
+  - An **ensemble or BLS** pipeline (for example tokenise → model → detokenise), plus `perf_analyzer` on one model (the Model Analyzer is GPU-oriented, so it waits for v14).
+  - If S0-1 fails (no arm64 Triton), the LLM-on-Triton step moves to v14 on the GPU: ORT has no decoupled streaming backend.
+  - Embeddings, ASR and **TTS (Python backend)** go behind KServe v2. v2 isn't built yet, so v8 starts by exporting a small embedder to ONNX itself.
     - Docker on the Mac has **no Metal access**, so Triton runs CPU stand-ins: an ONNX embedder, faster-whisper or an ONNX Whisper, and a CPU TTS.
     - The MLX models stay native.
     - Contract tests check schema and latency, not quality parity.
@@ -439,6 +454,13 @@ Each version lists what you **learn** (interview topics), what you **build**, th
   - concepts: speculative decoding, FlashAttention (tiling and recompute derived on the roofline), prefill/decode disaggregation, KV offload, multi-LoRA serving.
 - **Build:**
   - the KV-cache calculation for Qwen3-4B on paper;
+  - **a mini-vLLM on your F4–F5 tiny GPT (added 2026-10-24, about 3 sessions)**, in steps:
+    1. a KV cache: generation stops recomputing the prefix;
+    2. paged KV: fixed-size blocks, a block table per sequence, and a free list (**learner-writes**: the block allocator);
+    3. continuous batching: a scheduler step that admits new sequences and evicts finished ones every decode step (**learner-writes**: the scheduler step);
+    4. prefix caching: shared prefix blocks with ref counts;
+    5. measure static vs continuous batching with scheduler metrics (tokens per step, batch utilisation, wasted padding). On MPS a tiny model is dominated by launch and Python overhead, so wall-clock curves would mislead.
+  - a guided read of vLLM's scheduler and KV-cache manager code, mapped onto your mini-vLLM;
   - vllm-metal vs `mlx_lm.server`, benchmarked for concurrency against TTFT and throughput. vllm-metal is young, so it gets a **1-session timebox**. If it fails, or lacks continuous batching or prefix caching, use the fallback:
     - a paper KV / Little's-law model;
     - a toy continuous-batching scheduler simulator;
@@ -474,7 +496,7 @@ Each version lists what you **learn** (interview topics), what you **build**, th
   - dedup and contamination;
   - experiment tracking.
 - **Build:**
-  - a synthetic tool-call data pipeline validated against the mock tools;
+  - **retargeted 2026-10-24:** a synthetic **Hinglish voice-reply style** data pipeline (short, speakable Devanagari replies, filtered and deduped against the v7a style set). The tool-call pipeline moves to after v1;
   - DVC and MLflow;
   - MLX LoRA on 4-bit Qwen3-4B, before vs after on the gate. Memory-safe settings: sequence length 512 or less, batch 1, gradient checkpointing, other services stopped. Fallback: Qwen3-1.7B.
   - **DPO:** mlx-lm has no official DPO, and DPO needs a reference model in memory. So **you implement the DPO loss yourself** and run a few steps on Qwen3-0.6B or 1.7B. If that isn't stable after 1 session, the real DPO run moves to v13.
@@ -496,7 +518,7 @@ Each version lists what you **learn** (interview topics), what you **build**, th
   - a provider choice;
   - `gpu-up` / `gpu-down`;
   - a hardened SSH tunnel;
-  - a dead-man switch, a heartbeat alert, a budget alert;
+  - a dead-man switch, a heartbeat alert, a budget alert (plain scripts; v7b's alerting comes after v14);
   - the S0-6, S0-7 and S0-11 spikes.
 - **Source:** old phase 11.
 
@@ -507,13 +529,14 @@ Each version lists what you **learn** (interview topics), what you **build**, th
   - vLLM CUDA flags (`--gpu-memory-utilization`, max sequences, quantisation, LoRA);
   - the sprint checklist.
 - **Build:**
-  - the full synthetic data run;
+  - the full synthetic data run (the v11 style data; tool-call data only if v1 has landed);
   - PEFT LoRA/QLoRA on CUDA, merged;
   - AWQ and GPTQ;
-  - vLLM on CUDA, including **multi-LoRA serving** of adapters vs a merged model;
+  - vLLM on CUDA, including **multi-LoRA serving** of adapters vs a merged model (the first one served is the v13 PEFT style adapter; v11's MLX adapter on the MLX 4-bit base doesn't load in vLLM);
+  - **vLLM deep (added 2026-10-24):** the same concurrency sweep as your v9 mini-vLLM, with PagedAttention, chunked prefill on/off, prefix caching on/off and `--gpu-memory-utilization` changed one at a time; the results go into one table next to your mini-vLLM numbers;
   - ASR LoRA;
   - gate and promote;
-  - E1 (constrained decoding vs fine-tune) and E2 (quantisation formats).
+  - E2 (quantisation formats). E1 (constrained decoding vs fine-tune) needs tool calls, so it runs after v1.
   - Stretch: DPO at scale on the GPU.
 - **Source:** old phase 12.
 
@@ -531,6 +554,7 @@ Each version lists what you **learn** (interview topics), what you **build**, th
   - Triton dynamic batching measured on the GPU;
   - E7 stretch (one Triton vs separate servers);
   - E8 (Triton vLLM backend vs standalone);
+  - **Triton + TensorRT-LLM backend (added 2026-10-24, stretch, 2 h timebox, image cached on a persistent disk):** build an engine for the same small Qwen, serve it with inflight batching, and compare it with the vLLM backend on TTFT, tokens/s and memory in one table;
   - an annotated Nsight timeline;
   - Mac-vs-GPU divergence;
   - speculative decoding on vLLM as a stretch experiment.
@@ -640,6 +664,7 @@ Claude writes the code in small commits. For each step you **predict** first, th
 | v1 | Tool-call loop |
 | v6 | Approval state machine transitions |
 | v8 | `config.pbtxt` |
+| v9 | Mini-vLLM: paged-KV block allocator + continuous-batching scheduler step |
 | v10 | E3 quantiser |
 | v11 | DPO loss |
 | v12 | CUDA kernels |

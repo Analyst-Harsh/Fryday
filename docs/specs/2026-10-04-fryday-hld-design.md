@@ -170,7 +170,7 @@ Exact IDs were checked against model cards on 2026-10-04 unless marked *(verify)
 | Topic | Where | Concrete deliverable |
 |---|---|---|
 | Audio basics | resampling 48k→16k, log-mel, VAD, codecs, how TTS vocodes | notes + tested feature module (time-boxed) |
-| Fine-tuning | LLM LoRA first, then ASR LoRA; synthetic data gen + filtering | before/after: tool accuracy, WER, entity accuracy; constrained decoding vs fine-tune vs both |
+| Fine-tuning | LLM LoRA first, then ASR LoRA; synthetic data gen + filtering | before/after: voice-reply style score (first, since 2026-10-24), tool accuracy (after v1), WER, entity accuracy; constrained decoding vs fine-tune vs both |
 | Quantisation | from-scratch int8/int4 weight quantiser on one layer, then AWQ vs GPTQ vs MLX | error analysis + quality/latency table per format |
 | LLM serving | KV-cache size formula vs vLLM reality; paged attention; continuous batching | TTFT/throughput vs concurrency curve |
 | ONNX | export embed, ASR encoder | parity tests vs PyTorch (tolerances), Mac latency |

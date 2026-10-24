@@ -13,7 +13,7 @@ The owner is building Fryday to learn AI engineering and to become interview-rea
    - Before each non-trivial run, ask the owner to **predict** the output, latency or failure. After the run, compare the result with the prediction.
    - After each step, ask one "why" question.
    - Each session, the owner makes **one change themselves**.
-   - **Learner-writes list:** for the pieces listed in roadmap §5 (tiny GPT attention, sampler, tool-call loop, approval transitions, `config.pbtxt`, E3 quantiser, DPO loss, CUDA kernels), do **not** write the code. Give the signature and a failing test, then hints in steps (hint → partial → full), and review the owner's code.
+   - **Learner-writes list:** for the pieces listed in roadmap §5 (tiny GPT attention, sampler, mini-vLLM block allocator + scheduler step, tool-call loop, approval transitions, `config.pbtxt`, E3 quantiser, DPO loss, CUDA kernels), do **not** write the code. Give the signature and a failing test, then hints in steps (hint → partial → full), and review the owner's code.
 4. **Close (~15 min).**
    - Run a 3-question quiz, one of them explain-it-back without looking.
    - Add a `LEARNING.md` entry.
