@@ -8,6 +8,7 @@ import re
 import time
 from collections.abc import AsyncIterable, Awaitable, Callable, Generator, Iterable
 from dataclasses import dataclass
+from typing import Protocol
 
 # A sentence ends at । ? ! or . followed by whitespace, or at a line break (models often
 # end a line without punctuation). Requiring the space keeps "7.30" and "3.5" whole.
@@ -59,6 +60,37 @@ def sentences(deltas: Iterable[str]) -> Generator[str, None, None]:
         yield from chunks
     if buffer.strip():
         yield buffer.strip()  # the reply ended without a closing space
+
+
+class Channel(Protocol):
+    """Where a voice turn's output goes: the terminal (talk.Terminal) or a browser
+    (connection.Connection). Called only from the event loop."""
+
+    def play(self, pcm: bytes, turn: int) -> None:
+        """Queue audio; never waits for it to be heard."""
+        ...
+
+    def allow(self, turn: int) -> None:
+        """Play only this turn's audio from now on (barge-in)."""
+        ...
+
+    def played(self, turn: int) -> int:
+        """PCM bytes of this turn the user has heard so far."""
+        ...
+
+    def event(self, kind: str, **fields: object) -> None:
+        """Something to show: thinking, transcript, reply, interrupted, notice, done."""
+        ...
+
+
+# What the user sees for each notice code; the browser gets both the code and the text.
+NOTICES = {
+    "heard_nothing": "(heard nothing, try again)",
+    "llm_down": "(Fryday couldn't reach the model. Is `make llm` running?)",
+    "too_short": "(too short, try again)",
+    "silent": "(silence: is the mic allowed? Browser site settings, or System Settings >"
+    " Privacy > Microphone for the terminal)",
+}
 
 
 @dataclass

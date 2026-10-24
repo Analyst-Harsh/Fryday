@@ -84,6 +84,20 @@ class Settings(BaseSettings):
     # speech. Lower answers sooner but cuts off people who pause mid-sentence.
     hands_free: bool = False
     vad_min_silence_ms: int = Field(default=500, ge=100)
+
+    # Browser gateway (`make serve`). Localhost only: there is no TLS. One user, one
+    # static token, sent in the first WebSocket message (HLD §7). Origins the browser
+    # may connect from; Vite's dev server (5173) forwards the page's own Origin. In
+    # env, a JSON list: FRYDAY_ALLOWED_ORIGINS='["http://localhost:8000"]'.
+    host: str = "127.0.0.1"
+    port: int = 8000
+    access_token: SecretStr = SecretStr("")
+    allowed_origins: list[str] = [
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
     system_prompt: str = "You are Fryday, a helpful assistant. Reply in short, friendly Hinglish."
 
     @model_validator(mode="after")

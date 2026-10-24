@@ -35,12 +35,18 @@ cp .env.example .env        # optional: compose has defaults; edit for real valu
 | `make up` | Start the `core` compose profile and wait until healthy |
 | `make down` | Stop it (data volume kept; `docker compose --profile core down -v` wipes it) |
 | `make db-check` | Print the installed pgvector version |
+| `make llm` | Start the local model server (MLX, port 8080) |
+| `make talk` | Voice chat in the terminal (push-to-talk; `FRYDAY_HANDS_FREE=1` for hands-free) |
+| `make serve` | The app: WebSocket gateway + the built web UI on http://127.0.0.1:8000 (needs `FRYDAY_ACCESS_TOKEN` in `.env`) |
+| `make web` | The React app's dev server on http://localhost:5173 (proxies `/ws` to `make serve`) |
+| `make web-build` / `make web-test` | Build `web/dist` for `make serve` / run the frontend tests |
 
 ## Repo layout
 
 | Path | What |
 |---|---|
-| `app/` | uv workspace member `fryday-app` (package `fryday`): the FastAPI service, from phase 3 |
+| `app/` | uv workspace member `fryday-app` (package `fryday`): the voice pipeline and the FastAPI gateway (`gateway.py`) |
+| `web/` | The browser client: React + Vite + TypeScript |
 | `infra/` | Files compose mounts (`infra/db/init.sql`); GPU scripts later |
 | `compose.yaml` | Compose profiles; `core` = Postgres 16 + pgvector for now |
 | `docs/` | Specs, roadmap and phase plans, experiments, runbook |
@@ -51,6 +57,6 @@ cp .env.example .env        # optional: compose has defaults; edit for real valu
 
 - **pre-commit** (lefthook): ruff format and fix, pyright on staged files, gitleaks on staged changes.
 - **pre-push**: the full format check, lint, type check and test suite.
-- **CI** (GitHub Actions) on every PR and push to `main`: format check, lint, pyright and pytest. Secret scanning (gitleaks) and the compose check run locally only: the pre-commit hook and `make up && make db-check`.
+- **CI** (GitHub Actions) on every PR and push to `main`: format check, lint, pyright and pytest; in parallel, the web job (tsc, vitest, vite build). Secret scanning (gitleaks) and the compose check run locally only: the pre-commit hook and `make up && make db-check`.
 
 CI never runs real models.

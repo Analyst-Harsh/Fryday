@@ -3,19 +3,21 @@
 Run the model server first (`make llm`), then `make talk`, or `FRYDAY_HANDS_FREE=1 make talk`
 to end each turn on silence (Silero VAD) instead of Enter. Speaking (or pressing Enter)
 while Fryday talks interrupts it. Use headphones: with no echo cancellation, Fryday's
-own voice would interrupt it hands-free. The browser client comes later in v5.
+own voice would interrupt it hands-free. For the browser, see gateway.py (`make serve`).
 
 This module wires the parts together: mic.py (listeners), turns.py (turn-taking),
-voice.py (reply → speech), speaker.py (playback).
+voice.py (reply → speech), speaker.py (playback). VoiceSession only talks to a
+voice.Channel, so the browser gateway reuses it unchanged.
 """
 
 import asyncio
 import threading
 import time
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass
 from functools import partial
+from typing import cast
 
 import openai
 import structlog
@@ -33,7 +35,7 @@ from fryday.speaker import PLAY_PIECE_S, Speaker
 from fryday.tracing import content, init_tracing, record, shutdown_tracing, span, trace_root
 from fryday.tts import TTSClient
 from fryday.turns import TurnManager
-from fryday.voice import SpokenReply, heard_text, speak_reply
+from fryday.voice import NOTICES, Channel, SpokenReply, heard_text, speak_reply
 
 log = structlog.get_logger(__name__)
 
@@ -52,30 +54,38 @@ class VoiceSession:
     """One conversation: its history, and how a single turn runs (ASR → LLM → TTS)."""
 
     def __init__(
-        self, settings: Settings, asr: ASRClient, llm: LLMClient, tts: TTSClient, speaker: Speaker
+        self,
+        settings: Settings,
+        asr: ASRClient,
+        llm: LLMClient,
+        tts: TTSClient,
+        out: Channel,
+        vad_wait_s: float = 0.0,
     ) -> None:
         self._settings = settings
-        self._asr, self._llm, self._tts, self._speaker = asr, llm, tts, speaker
+        self._asr, self._llm, self._tts = asr, llm, tts
+        self.out = out  # re-pointed when a browser reconnects; history stays
         self._history: list[Message] = [{"role": "system", "content": settings.voice_system_prompt}]
         self._session_id = uuid.uuid4().hex
         # Hands-free, the turn only ends after this much silence: part of the user's wait.
-        self._vad_wait_s = settings.vad_min_silence_ms / 1000 if settings.hands_free else 0.0
+        self._vad_wait_s = vad_wait_s
         self._last: _LastReply | None = None
 
     async def run_turn(self, pcm: bytes, turn_id: int) -> None:
         clear_contextvars()  # the task's own copy: other turns' log context is untouched
         bind_contextvars(turn_id=turn_id, session_id=self._session_id)
         # A new turn always follows interrupt(), so the last reply's audio has stopped.
-        self._settle_last_reply()
+        self.settle()
+        self.out.event("thinking", turn=turn_id)
         # One trace per turn: asr, llm.stream and each tts sentence are its children.
         with trace_root("voice_turn", session_id=self._session_id) as turn:
             user, asr_s = await self._transcribe(pcm)
             if not user:
-                print("(heard nothing, try again)")
+                self.out.event("notice", turn=turn_id, code="heard_nothing")
                 record(turn, error="empty_transcript")
                 return
             turn.update(input=content(user))  # through the privacy gate, like trace_root
-            print(f"you>    {user}")
+            self.out.event("transcript", turn=turn_id, text=user)
             self._remember({"role": "user", "content": user})
 
             said: list[str] = []  # filled as deltas arrive, so a cancelled turn keeps them
@@ -83,12 +93,12 @@ class VoiceSession:
             try:
                 reply = await speak_reply(
                     self._deltas(said),
-                    partial(self._speak, chunks),
-                    partial(self._speaker.play, turn=turn_id),
+                    partial(self._speak, chunks, turn_id),
+                    partial(self.out.play, turn=turn_id),
                 )
             except openai.APIError:
                 log.exception("llm_failed")
-                print("(Fryday couldn't reach the model. Is `make llm` running?)")
+                self.out.event("notice", turn=turn_id, code="llm_down")
                 self._history.pop()  # drop the unanswered user turn
                 record(turn, error="llm_failed")
                 return
@@ -98,7 +108,7 @@ class VoiceSession:
             message: Message = {"role": "assistant", "content": reply.text}
             self._remember(message)
             self._last = _LastReply(turn_id, message, chunks, cut=False)
-            self._report(turn, reply, asr_s, pcm)
+            self._report(turn, turn_id, reply, asr_s, pcm)
 
     async def _transcribe(self, pcm: bytes) -> tuple[str, float]:
         start = time.perf_counter()
@@ -112,13 +122,15 @@ class VoiceSession:
             said.append(event.text)
             yield event.text
 
-    async def _speak(self, chunks: list[tuple[str, int]], sentence: str) -> list[bytes]:
+    async def _speak(
+        self, chunks: list[tuple[str, int]], turn_id: int, sentence: str
+    ) -> list[bytes]:
+        self.out.event("reply", turn=turn_id, text=sentence)  # here, on the loop: not in _render
         pcm = await asyncio.to_thread(self._render, sentence)  # Kokoro blocks
         chunks.append((sentence, sum(map(len, pcm))))
         return pcm
 
     def _render(self, sentence: str) -> list[bytes]:
-        print(f"fryday> {sentence}")
         spoken = normalise(sentence)  # layer 2 safety net: ₹, times, decimals
         with span("tts", input=spoken):
             # ponytail: renders the whole chunk before playing it; stream Kokoro's
@@ -129,7 +141,7 @@ class VoiceSession:
         self._history.append(message)
         self._history[:] = trim_history(self._history, self._settings.max_history_messages)
 
-    def _settle_last_reply(self) -> None:
+    def settle(self) -> None:
         """If the last reply was cut short, keep only what was heard of it in history.
 
         Usually the turn had already finished (TTS renders ~20x faster than playback),
@@ -138,7 +150,7 @@ class VoiceSession:
         last, self._last = self._last, None
         if last is None:
             return
-        played = self._speaker.played(last.turn)
+        played = self.out.played(last.turn)
         if last.cut or played < sum(size for _, size in last.chunks):
             last.message["content"] = heard_text(last.chunks, played) + "…"
             log.info("reply_trimmed", heard_bytes=played)
@@ -150,30 +162,56 @@ class VoiceSession:
             message: Message = {"role": "assistant", "content": said}
             self._remember(message)
             self._last = _LastReply(turn_id, message, chunks, cut=True)
-        print("        (interrupted)")
+        self.out.event("interrupted", turn=turn_id)
         log.info("barge_in", said_chars=len(said))
         record(turn, output=said, error="barge_in")
 
-    def _report(self, turn: LangfuseSpan, reply: SpokenReply, asr_s: float, pcm: bytes) -> None:
+    def _report(
+        self, turn: LangfuseSpan, turn_id: int, reply: SpokenReply, asr_s: float, pcm: bytes
+    ) -> None:
         stats = {
             "asr_s": round(asr_s, 3),
             "llm_first_token_s": _round(reply.first_token_s),
             "first_audio_s": _round(reply.first_audio_s),
             "speech_in_s": round(len(pcm) / 2 / SAMPLE_RATE, 2),
             "vad_wait_s": self._vad_wait_s,
+            # You stop talking → Fryday speaks, as measured on the server.
+            "heard_s": round(self._vad_wait_s + asr_s + (reply.first_audio_s or 0), 3),
         }
         record(turn, output=reply.text, metadata=stats)
         log.info("voice_turn", **stats)
-        heard_s = self._vad_wait_s + asr_s + (reply.first_audio_s or 0)
-        print(
-            f"        ⏱  silence {_ms(self._vad_wait_s)} → ASR {asr_s:.2f} s"
-            f" → first token +{_ms(reply.first_token_s)}"
-            f" → first audio +{_ms(reply.first_audio_s)}"
-            f"  (you stop talking → Fryday speaks: {heard_s:.2f} s)"
-        )
+        self.out.event("done", turn=turn_id, stats=stats)
 
 
-async def converse(settings: Settings, session: VoiceSession, speaker: Speaker) -> None:
+class Terminal(Speaker):
+    """The terminal as a voice.Channel: Speaker plays the audio, print() shows the rest."""
+
+    def event(self, kind: str, **fields: object) -> None:
+        match kind:
+            case "transcript":
+                print(f"you>    {fields['text']}")
+            case "reply":
+                print(f"fryday> {fields['text']}")
+            case "interrupted":
+                print("        (interrupted)")
+            case "notice":
+                print(NOTICES[str(fields["code"])])
+            case "done":
+                print(_stats_line(cast(Mapping[str, float | None], fields["stats"])))
+            case _:  # thinking: the terminal shows nothing
+                pass
+
+
+def _stats_line(stats: Mapping[str, float | None]) -> str:
+    return (
+        f"        ⏱  silence {_ms(stats['vad_wait_s'])} → ASR {_ms(stats['asr_s'])}"
+        f" → first token +{_ms(stats['llm_first_token_s'])}"
+        f" → first audio +{_ms(stats['first_audio_s'])}"
+        f"  (you stop talking → Fryday speaks: {_ms(stats['heard_s'])})"
+    )
+
+
+async def converse(settings: Settings, session: VoiceSession, speaker: Terminal) -> None:
     """The turn loop: a mic thread feeds utterances in, one turn runs at a time."""
     loop = asyncio.get_running_loop()
     utterances: asyncio.Queue[bytes | None] = asyncio.Queue()
@@ -192,7 +230,7 @@ async def converse(settings: Settings, session: VoiceSession, speaker: Speaker) 
 
     while (pcm := await utterances.get()) is not None:  # None: the user quit
         if problem := mic.problem_with(pcm):
-            print(problem)
+            print(NOTICES[problem])
             continue
         turns.start(pcm)
     turns.interrupt()
@@ -207,9 +245,11 @@ def main() -> None:
     asr, tts = ASRClient(settings), TTSClient(settings)
     if not _warm_up(settings, asr, llm, tts):
         return
-    speaker = Speaker(tts.sample_rate)
+    speaker = Terminal(tts.sample_rate)
+    vad_wait_s = settings.vad_min_silence_ms / 1000 if settings.hands_free else 0.0
+    session = VoiceSession(settings, asr, llm, tts, speaker, vad_wait_s)
     try:
-        asyncio.run(converse(settings, VoiceSession(settings, asr, llm, tts, speaker), speaker))
+        asyncio.run(converse(settings, session, speaker))
     except KeyboardInterrupt:
         print()
     finally:
@@ -219,22 +259,30 @@ def main() -> None:
 
 def _warm_up(settings: Settings, asr: ASRClient, llm: LLMClient, tts: TTSClient) -> bool:
     """Pay first-call costs now, not on the first turn. False if the LLM is unreachable."""
-    asr.transcribe(bytes(SAMPLE_RATE * 2), SAMPLE_RATE)  # 1 s of silence: compiles kernels
-    list(tts.speak("नमस्ते।"))
-    # Also warms the server's prefix cache for the voice system prompt (smoke run: first
-    # token 8.5 s cold vs 0.1 s warm). Fails fast here if `make llm` isn't running.
-    warm: list[Message] = [
-        {"role": "system", "content": settings.voice_system_prompt},
-        {"role": "user", "content": "नमस्ते"},
-    ]
+    warm_speech(asr, tts)
     try:
-        for _ in llm.stream(warm):
-            pass
+        warm_llm(settings, llm)
     except openai.APIError:
         # Also raised on timeout (e.g. the server is still downloading or loading a model).
         print("Model server unreachable or too slow. Run `make llm` and wait until it's loaded.")
         return False
     return True
+
+
+def warm_speech(asr: ASRClient, tts: TTSClient) -> None:
+    asr.transcribe(bytes(SAMPLE_RATE * 2), SAMPLE_RATE)  # 1 s of silence: compiles kernels
+    list(tts.speak("नमस्ते।"))
+
+
+def warm_llm(settings: Settings, llm: LLMClient) -> None:
+    """Warm the server's prefix cache for the voice system prompt (smoke run: first
+    token 8.5 s cold vs 0.1 s warm). Raises openai.APIError if the server is down."""
+    warm: list[Message] = [
+        {"role": "system", "content": settings.voice_system_prompt},
+        {"role": "user", "content": "नमस्ते"},
+    ]
+    for _ in llm.stream(warm):
+        pass
 
 
 def _round(seconds: float | None) -> float | None:

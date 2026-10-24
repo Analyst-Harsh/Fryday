@@ -1,4 +1,4 @@
-.PHONY: sync test lint up down db-check llm chat talk
+.PHONY: sync test lint up down db-check llm chat talk serve web web-build web-test
 
 sync:
 	uv sync --all-packages
@@ -32,3 +32,18 @@ chat:
 # Push-to-talk voice chat: mic → Whisper → LLM → Kokoro → speaker (needs `make llm`; use headphones)
 talk:
 	uv run fryday-talk
+
+# Browser voice chat: FastAPI gateway on :8000 (needs `make llm` and FRYDAY_ACCESS_TOKEN).
+# Serves web/dist if built (`make web-build`); for development run `make web` alongside.
+serve:
+	uv run fryday-serve
+
+# React app dev server on :5173, proxying /ws to `make serve`.
+web:
+	cd web && npm run dev
+
+web-build:
+	cd web && npm ci && npm run build
+
+web-test:
+	cd web && npm test

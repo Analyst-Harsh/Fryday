@@ -12,6 +12,32 @@ Every result goes here, **including negative ones** (roadmap working principles)
 - **Decision:** what changes because of this (HLD/roadmap update, next step).
 ```
 
+## 2026-10-22: Browser end to end: hands-free over the WebSocket gateway (v5 build 5)
+- **Question:** does the full browser path work (mic → downsample → WS → Silero VAD → Whisper → LLM → Kokoro → WS → Web Audio), and what does it cost compared with the terminal?
+- **Setup:**
+  - `make serve` (FastAPI gateway, real Whisper large-v3-turbo + Kokoro `hf_alpha` + Silero) and `make llm` (Qwen3-4B-Instruct-2507-4bit) on the M-series Mac; the built React app served by the gateway.
+  - Headless Chromium (Playwright). Its "microphone" was a test harness: `getUserMedia` replaced by a stream playing a Kokoro-spoken "आज मौसम कैसा है?" (2.55 s), so ASR heard synthetic speech, not a person.
+  - 9 turns in one session (1 cold, 8 warm), 2 of them barged in on mid-reply. Server times from the `voice_turn` log; VAD min silence 500 ms.
+- **Result (8 warm turns, median, min–max):**
+
+  | Stage | Browser path |
+  |---|---|
+  | You stop → Fryday speaks (server, incl. 500 ms VAD wait) | **2.14 s** (1.66–2.97) |
+  | ASR | 0.54 s (0.40–1.01) |
+  | LLM first token | 0.23 s (0.16–0.50) |
+  | First audio (from reply start) | 1.15 s (0.76–1.49) |
+  | Browser first audio (from `thinking`, one turn) | 2.55 s |
+
+  - **Cold first turn: 9.99 s** (ASR 5.13 s, first token 1.5 s). Hypotheses, not checked: Whisper's first call from a new worker thread, and the one-time LLM prefix warm-up (started when the first tab connects) running at the same moment.
+  - Transcription was right every time ("आज मोसम कैसा है?"; मोसम for मौसम).
+  - **Barge-in worked:** the browser flushed playback, reported played bytes (65,588 and 71,718), and the server trimmed history to them (`reply_trimmed`).
+- **Bugs this run caught (fixed before recording):**
+  - The worklet transferred its batch buffer and then sized the next batch from the detached array (length 0), looping forever on the audio thread: the mic went silent after 2 batches and the tab froze.
+  - In tests, every app instance shut down the process-wide Langfuse client; the second flush blocked forever. Tracing now shuts down once, in `main()`.
+  - Connection clean-up was cancelled half-way when the handler task was cancelled; now shielded.
+- **Not measured yet:** a real voice on a real mic; self-barge-in on laptop speakers vs headphones (browser AEC); p95 over 20+ turns.
+- **Decision:** the browser path is the v5 default. Next: a real-mic session (owner) for the hero-video numbers and the speakers-vs-headphones check.
+
 ## 2026-10-22: Roman → Devanagari transliteration before TTS: IndicXlit (v5 build, S0-8 follow-up, step 2)
 - **Question:** can a transliterator turn Roman replies into Devanagari for Kokoro fast enough and cleanly enough to keep step 1's 251 ms saving?
 - **Setup:**

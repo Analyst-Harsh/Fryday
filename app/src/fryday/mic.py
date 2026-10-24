@@ -19,6 +19,7 @@ from fryday.config import Settings
 
 OnSpeech = Callable[[], None]
 OnUtterance = Callable[[bytes | None], None]
+Vad = Callable[[np.ndarray], dict[str, int | float] | None]  # int16 frame → start/end event
 
 MIN_SPEECH_S = 0.3  # shorter than this is a stray key press, not speech
 SILENT_PEAK = 100  # of 32767 (about -50 dBFS): macOS records pure zeros without mic permission
@@ -45,11 +46,11 @@ def make_listener(
 
 
 def problem_with(pcm: bytes) -> str | None:
-    """Why this recording isn't worth transcribing, or None if it is."""
+    """Why this recording isn't worth transcribing (a voice.NOTICES code), or None."""
     if len(pcm) < MIN_SPEECH_S * SAMPLE_RATE * 2:  # 2 bytes per sample
-        return "(too short, try again)"
+        return "too_short"
     if np.abs(np.frombuffer(pcm, dtype="<i2")).max() < SILENT_PEAK:
-        return "(silence: check System Settings > Privacy > Microphone for your terminal)"
+        return "silent"
     return None
 
 
@@ -106,32 +107,57 @@ def listen_hands_free(
         samplerate=SAMPLE_RATE, channels=1, dtype="int16", blocksize=VAD_FRAME, callback=on_audio
     ):
         print("🎙  listening… just speak, and pause to send ")
-        while True:
-            # A fresh iterator per utterance resets the model's state and sample counter.
-            vad = VADIterator(
-                model,
-                sampling_rate=SAMPLE_RATE,
-                min_silence_duration_ms=min_silence_ms,
-                speech_pad_ms=VAD_PAD_MS,
-            )
+        vad_loop(frames(), silero(model, min_silence_ms), on_speech, on_utterance)
 
-            def detect(frame: np.ndarray, vad: VADIterator = vad) -> dict[str, int | float] | None:
-                # VADIterator turns the float32 array into a tensor itself.
-                event = vad(frame.astype(np.float32) / 32768)
-                if event and "start" in event:
-                    # ponytail: any speech interrupts, even a cough; add a min-speech
-                    # or semantic check (production gap #32) if that annoys.
-                    on_speech()
-                return event
 
-            on_utterance(endpoint(frames(), detect))
+def silero(model: object, min_silence_ms: int) -> Callable[[], Vad]:
+    """Makes a fresh Silero VAD; one per utterance resets its state and sample counter."""
+
+    def new() -> Vad:
+        vad = VADIterator(
+            model,
+            sampling_rate=SAMPLE_RATE,
+            min_silence_duration_ms=min_silence_ms,
+            speech_pad_ms=VAD_PAD_MS,
+        )
+        # VADIterator turns the float32 array into a tensor itself.
+        return lambda frame: vad(frame.astype(np.float32) / 32768)
+
+    return new
+
+
+def vad_loop(
+    frames: Iterator[np.ndarray],
+    new_vad: Callable[[], Vad],
+    on_speech: OnSpeech,
+    on_utterance: OnUtterance,
+) -> None:
+    """Cut utterances out of frames until they run out (the mic or socket closed).
+
+    on_speech fires at every VAD start, also while Fryday is talking: that's barge-in.
+    """
+    while True:
+        vad = new_vad()
+
+        def detect(frame: np.ndarray, vad: Vad = vad) -> dict[str, int | float] | None:
+            event = vad(frame)
+            if event and "start" in event:
+                # ponytail: any speech interrupts, even a cough; add a min-speech
+                # or semantic check (production gap #32) if that annoys.
+                on_speech()
+            return event
+
+        if (pcm := endpoint(frames, detect)) is None:
+            return  # frames ran out: no utterance, so nothing to report
+        on_utterance(pcm)
 
 
 def endpoint(
     frames: Iterable[np.ndarray], vad: Callable[[np.ndarray], dict[str, int | float] | None]
-) -> bytes:
+) -> bytes | None:
     """Cut one utterance out of a stream of VAD_FRAME-sample int16 frames, from the
-    VAD's start event to its end event (sample indices, padding included)."""
+    VAD's start event to its end event (sample indices, padding included).
+    None if the frames ran out first (the mic or socket closed)."""
     audio: deque[np.ndarray] = deque()
     dropped = 0  # samples trimmed off the front while idle; VAD indices count them
     start: int | None = None  # index into `audio`, not the VAD's turn-wide count
@@ -150,4 +176,4 @@ def endpoint(
             end = len(audio) * VAD_FRAME  # never heard an end (TV, fan): send what we have
         if end is not None:
             return np.concatenate(audio)[start:end].tobytes()
-    return b""
+    return None

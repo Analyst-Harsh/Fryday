@@ -2,7 +2,7 @@
 
 ## Context
 Draft source: `/Users/harshitgoyal/Dev/AI Projects/Fryday/docs/voice_assistant`.
-Fryday is a Hinglish tap-to-talk voice assistant whose real purpose is **learning depth for AI engineering roles**: fine-tuning, audio basics, ONNX, CUDA working principles, TensorRT, Triton — inside a production-grade system. The implementation plan is a separate document: the [learning roadmap](../plan/00-learning-roadmap.md) (2026-10-07).
+Fryday is a Hinglish hands-free voice assistant whose real purpose is **learning depth for AI engineering roles**: fine-tuning, audio basics, ONNX, CUDA working principles, TensorRT, Triton — inside a production-grade system. The implementation plan is a separate document: the [learning roadmap](../plan/00-learning-roadmap.md) (2026-10-07).
 
 **Revision history**
 - **v2** applied three independent reviews: an AI architect, a production engineer and a web fact-check. The main changes were:
@@ -21,7 +21,7 @@ Fryday is a Hinglish tap-to-talk voice assistant whose real purpose is **learnin
   - Tailscale userspace networking on RunPod;
   - exact model IDs;
   - script convention and Hindi text normalisation moved to spike 0;
-  - tap-to-talk input, with VAD removed from v1.
+  - hands-free input: server-side Silero VAD ends each turn and detects barge-in (decided 2026-10-22, v5; tap-to-talk was the original v1 plan).
 - **v4** applied four owner decisions:
   - public datasets plus one own-voice entity test set, with no volunteer speakers;
   - ungated open models by default;
@@ -40,7 +40,7 @@ Fryday is a Hinglish tap-to-talk voice assistant whose real purpose is **learnin
 | Mac↔GPU link | **SSH tunnel** (local port forwarding), key-only, no public ports except sshd |
 | Runtime | Production-grade engineering, on-demand runtime; showcase = recorded demo + benchmark numbers |
 | Serving | Same contracts on both machines. Triton for ASR, TTS and embeddings on the GPU, and on the Mac (CPU) **if spike 0 passes**; otherwise plain ONNX Runtime/CT2 behind the same KServe v2 contract. LLM through an OpenAI-compatible API: MLX-LM (native, not Docker) on the Mac, vLLM on the GPU |
-| Voice input | Tap to start, tap to stop (v1). Automatic end-of-speech detection is a later enhancement |
+| Voice input | **Hands-free** (2026-10-22, v5): the browser streams its mic; Silero VAD on the server ends a turn after 500 ms of silence and fires barge-in on speech start. The terminal keeps push-to-talk as an option (`make talk`) |
 | Script convention | **Decided in spike 0**. Option A: Roman Hinglish inside the pipeline, converted to Devanagari only for TTS. Option B: Devanagari for Hindi words everywhere |
 | CUDA | Working principles through profiling; no kernel track |
 | Vision | Phase 2 |
@@ -53,15 +53,15 @@ Fryday is a Hinglish tap-to-talk voice assistant whose real purpose is **learnin
 | Router to outside model | Phase 2. Hosted models used offline only, as experiment baselines |
 
 ## 1. Components
-1. **Web client** (thin React):
-   - Tap-to-talk mic button: one tap starts listening, a second tap stops.
-   - WebSocket audio, with browser echo cancellation on.
-   - Ordered playback through a jitter buffer.
-   - Transcript.
+1. **Web client** (React + Vite + TypeScript, `web/`; served by the app itself in production):
+   - Hands-free: the mic streams continuously (mute button), with browser echo cancellation on.
+   - Ordered playback through a jitter buffer (scheduled Web Audio buffers, 50 ms lead).
+   - Transcript, plus per-turn latency telemetry.
+   - Single user: the access token is typed once and kept in localStorage.
    - Approval card showing the amount, items and address **as text**, with a Confirm button.
 2. **App service** (FastAPI, one deployable):
    - gateway: WebSocket, auth, admission control, protocol version field;
-   - turn manager: tap boundaries, barge-in epochs, cancellation;
+   - turn manager: VAD turn boundaries, barge-in epochs, cancellation;
    - agent: LangGraph with a checkpointer and an approval interrupt;
    - memory;
    - text normaliser (§3.1);
@@ -93,23 +93,23 @@ Fryday is a Hinglish tap-to-talk voice assistant whose real purpose is **learnin
    - GitHub Actions CI.
 
 ## 2. Data flow (one turn)
-1. Tap to start: the browser streams PCM16 16 kHz binary frames, each tagged with `turn_id` and `seq`.
+1. The browser streams PCM16 16 kHz binary frames (untagged: protocol v1, `app/src/fryday/connection.py`); the server cuts them into 32 ms frames for Silero VAD, which marks where each utterance starts and ends.
 2. Tap to stop ends the utterance.
 3. Utterance → `asr` → normaliser (in). Empty, low-confidence or no-speech output is dropped, because Whisper hallucinates on silence.
 4. Transcript → `embed` → pgvector top-k memories. *(Added in v2; the first voice build, v5, skips this hop.)*
 5. LangGraph → LLM (streaming). *(In v5 this is a plain LLM stream behind the `reply` seam; the agent arrives in v1, behind the same seam.)*
    - **Tool call:** Pydantic-validate → filler line → MCP.
    - **Invalid call:** one repair attempt using the validation error, then a polite refusal.
-6. Reply tokens → chunks (a short first chunk of ~6 words, then sentences) → normaliser (out) → `tts` → audio emitted **in order** with `turn_id`/`chunk_seq`. The queue is bounded, so backpressure pauses TTS.
+6. Reply tokens → chunks (a short first chunk of ~6 words, then sentences) → normaliser (out) → `tts` → audio sent **in order** on the one socket, each chunk after its `reply` text event. No per-frame `turn_id`/`chunk_seq`: one socket keeps order and one sender drains one queue, so a `speech` event is the barge-in boundary (v5, 2026-10-22). No backpressure yet (production-gaps #35).
 7. Background: memory extraction, audit and history rows; audio is saved only with consent.
 
-**Barge-in**: tapping the mic during playback stops the reply and starts listening. It does four things:
-1. bumps the turn epoch, so the client drops stale chunks;
+**Barge-in**: the VAD hearing speech during playback stops the reply. It does four things:
+1. bumps the turn epoch, so the server's sender drops stale audio, and sends `speech`, on which the browser flushes what it has queued and reports how much it played (history keeps only that);
 2. closes the LLM stream (vLLM aborts the request);
 3. cancels in-flight Triton requests (**cancellation is gRPC-only in Triton; the Python and vLLM backends support early termination**);
 4. marks the turn interrupted.
 
-Tap-to-talk means no VAD runs on echoing audio in v1.
+Hands-free means the VAD hears the room, including Fryday's own voice on laptop speakers: browser echo cancellation on, headphones recommended (to be measured, EXPERIMENTS).
 
 On the Mac (v5: `turns.py` turn-taking, `mic.py` listeners, `speaker.py` playback, wired in `talk.py`) the turn manager is asyncio: one task per turn; ASR and TTS run in `to_thread`, and `LLMClient.reply()` runs the blocking stream on its own thread (one thread per stream keeps its trace open and closed in the same place). The epoch is `turn_id`: the speaker writes in 50 ms pieces and drops any piece from an older turn, which also covers audio an orphaned TTS thread finishes after cancel. A VAD start (hands-free, headphones only) or Enter (push-to-talk) triggers barge-in.
 
@@ -119,7 +119,7 @@ On the Mac (v5: `turns.py` turn-taking, `mic.py` listeners, `speaker.py` playbac
 
 | Stage | GPU (L4) | Mac |
 |---|---|---|
-| End of utterance | ~0 (second tap) | same |
+| End of utterance | 500 ms (VAD min silence) | same |
 | ASR (scales with length, RTF-based; 3–5 s utterance) | 300–500 ms + 1 RTT | 1–2 s (spike) |
 | Memory (embed call + pgvector) | 50 ms + 1 RTT | 80 ms |
 | LLM until the first ~6-word chunk exists | 250 ms + ~10 tokens + 1 RTT | ~600 ms + tokens |
@@ -327,7 +327,7 @@ Exact IDs were checked against model cards on 2026-10-04 unless marked *(verify)
 | Crash during a spend | Reconciler moves stale `executing` → `unknown` → resolved by status lookup |
 | OAuth refresh failure / MCP schema change / rate limit | Tool disabled with a clear message; the contract test catches schema drift |
 | ASR hallucination on silence or noise | The no-speech/low-confidence filter drops it |
-| WS drop | Conversation history kept; the in-flight turn is restarted, not resumed; pending approvals expire |
+| WS drop | Conversation history kept; the in-flight turn is **cancelled** (v5; restarting it is production-gaps #39); pending approvals expire |
 | Duplicate WS for the same user | Newest wins; the old one is closed |
 | Postgres down | Service unhealthy, refuses turns; restore from backup per the runbook |
 | Overload | Admission control → busy |

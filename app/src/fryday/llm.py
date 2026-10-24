@@ -11,6 +11,7 @@ from collections.abc import AsyncGenerator, Generator
 from dataclasses import dataclass
 
 import httpx2
+import openai
 from openai import OpenAI
 from openai.types.chat import ChatCompletionMessageParam
 
@@ -42,6 +43,15 @@ class LLMClient:
             max_retries=0,
             http_client=http_client,
         )
+
+    def ping(self) -> bool:
+        """Is the model server up? GET /models with a short timeout, for readiness checks:
+        cheap, unlike a generation, and quick to fail while the server is down."""
+        try:
+            self._client.with_options(timeout=2.0).models.list()
+        except openai.APIError:
+            return False
+        return True
 
     def stream(self, messages: list[Message]) -> Generator[str, None, None]:
         """Yield pieces of the reply as the server generates them (SSE under the hood).
