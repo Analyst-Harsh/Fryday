@@ -29,6 +29,7 @@ flowchart LR
 | 2026-10-16 | (v3 learn 1 quiz, weak) Which TTS stages are rules and which are neural (normalisation, G2P, acoustic model, vocoder)? Why is a silently dropped ₹ dangerous for Fryday, and which layer catches it? | due 2026-10-23 | due 2026-11-13 |
 | 2026-10-18 | (v3 learn 2 quiz, skipped) (1) Explain MOS, why one listener's rating means little, and what a ±0.44 95% CI tells you. (2) Give two reasons UTMOS ranked mispronounced `hi_roman` above `hi_deva`. (3) "सात" was flagged missing in every Hindi file: whose fault, and how do you fix the check without hiding real TTS errors? | due 2026-10-25 | due 2026-11-15 |
 | 2026-10-22 | (v5 builds, why-questions not answered) (1) Why does `interrupt()` call `allow()` before `cancel()`, and would you hear a difference if they were swapped? (2) `played()` counts bytes **written** to the device: is the heard-text cut early or late, and by about how much? (3) Why did a Devanagari question pull "Roman" replies back into Devanagari, and what does that mean for a user who types in Devanagari? (4) Why is `stop` a `threading.Event` and not an asyncio object? | due 2026-10-29 | due 2026-11-19 |
+| 2026-10-24 | (v5 walkthrough, why-questions not answered) (1) Why does the worklet's batching loop use `Math.min`? (2) Why does the Downsampler keep a fractional `pos`? (3) Why does `playedBytes` count PCM16 bytes, not Float32? (4) Why does `retryMs` reset on `ready`, not on `onopen`? (5) Why does `start()` call `connect()` last? (6) Why does the lamp use rAF + a CSS variable instead of `useState`? (7) Why does tab B wait on `old.closed`? (8) Why does `send_loop` drop audio but never events? (9) Why does the server's VAD, not the browser, decide barge-in? (10) Why does `vad_loop` make a new VAD per utterance? | due 2026-10-31 | due 2026-11-21 |
 
 ## Entry template
 ```markdown
@@ -40,6 +41,21 @@ flowchart LR
 - **Still don't get:**
 - **Tomorrow's first step:**
 ```
+
+---
+
+### 2026-10-24: v5 close (build): walkthrough, re-test after the splits, roadmap re-order
+- **Built or watched:**
+  - A code walkthrough of build 5 (worklet, `audio.ts`, Session, Player, mic, App, `gateway.py`, `connection.py`, barge-in, history window).
+  - Two readability splits, merged in PR #8: `session.ts` → `session.ts` + `player.ts` + `mic.ts`; `gateway.py` → `gateway.py` + `connection.py`.
+  - The fake-mic browser test rerun after the splits: **passed** (EXPERIMENTS 2026-10-24).
+  - A side design: a voice assistant for a portfolio site with appointment booking (Pipecat + hosted STT/LLM/TTS + Cal.com; under $10/month at portfolio traffic). Not on the roadmap.
+- **Predicted vs actual:** no prediction asked. The cold first turn took 2.76 s, against 9.99 s on 2026-10-22 (n=1, not explained).
+- **Surprised me:** Pipecat ships no models apart from Silero VAD and smart-turn. It is the plumbing between hosted STT, LLM and TTS, much like Fryday's gateway and turn manager.
+- **I can now explain:** where a framework like Pipecat replaces Fryday's hand-built pieces (transport, VAD, interruptions, STT → LLM → TTS, function calling).
+- **Still don't get:** quiz skipped (owner's choice). Ten why-questions from the walkthrough went unanswered; they are in the table above.
+- **v5 status:** closed for now. Parked until we return to the assistant track: Postgres + Alembic + the minute cap, load shedding, the circuit breaker, per-hop spans, the S0-2 memory-fit run, the real-mic session (end-of-speech threshold, p95 over 20+ turns, speakers vs headphones) and the v5 interview session.
+- **Tomorrow's first step:** write the roadmap re-order into `00-learning-roadmap.md` (F4–F6 → v7a → v8 → v9 → v10 → v11 with the Hinglish-style target → v12–v14 → back to v1, v2, v6, v7b, v15, v16), check it with a subagent, then start F4 (tiny GPT, part 1).
 
 ---
 
