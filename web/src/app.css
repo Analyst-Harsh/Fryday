@@ -1,0 +1,562 @@
+/* Fryday, "a calm lamp in a dark room". One bold thing: the lamp. Everything else is quiet.
+   Saffron is Fryday's voice, teal is yours. */
+
+:root {
+  --bg: #0b0d12;
+  --surface: #141821;
+  --line: #232835;
+  --ink: #ece7df;
+  --muted: #8a8f9c;
+  --saffron: #f2a93b;
+  --saffron-soft: #ffe3b0;
+  --teal: #5fd3c6;
+  --danger: #e5735c;
+
+  --serif: "Instrument Serif", "Iowan Old Style", Georgia, serif;
+  --sans: "Mukta", "Noto Sans Devanagari", system-ui, sans-serif;
+
+  /* Type scale: 1.25 ratio from a 17px body, the size Devanagari reads comfortably at. */
+  --step--1: 0.85rem;
+  --step-0: 1.0625rem;
+  --step-1: 1.33rem;
+  --step-2: 1.66rem;
+  --step-4: 2.6rem;
+
+  --level: 0; /* 0..1, the voice level, written by App's rAF loop */
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #eef0f4;
+    --surface: #ffffff;
+    --line: #d9dde5;
+    --ink: #151821;
+    --muted: #5c6270;
+    --saffron: #c9771a;
+    --saffron-soft: #f6c77a;
+    --teal: #1b7f76;
+    --danger: #b9472f;
+    color-scheme: light;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 400 var(--step-0) / 1.6 var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--saffron);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+.wordmark {
+  font: 400 var(--step-2) / 1 var(--serif);
+  letter-spacing: 0.01em;
+}
+
+.wordmark--large {
+  font-size: var(--step-4);
+  margin: 0.4em 0 0;
+}
+
+/* ---------- The lamp ---------- */
+
+.lamp {
+  --size: min(56vw, 300px);
+  position: relative;
+  width: var(--size);
+  height: var(--size);
+  display: grid;
+  place-items: center;
+}
+
+.lamp__glow,
+.lamp__core,
+.lamp__ring {
+  position: absolute;
+  border-radius: 50%;
+}
+
+/* The light the lamp throws on the room: grows with the voice. */
+.lamp__glow {
+  inset: -30%;
+  background: radial-gradient(circle, color-mix(in oklab, var(--glow, var(--saffron)) 32%, transparent) 0%, transparent 62%);
+  opacity: calc(0.45 + var(--level) * 0.55);
+  transform: scale(calc(0.9 + var(--level) * 0.25));
+  transition: background 600ms ease;
+}
+
+/* The flame itself: a warm core, brighter at its heart. */
+.lamp__core {
+  width: 46%;
+  height: 46%;
+  background: radial-gradient(circle at 50% 42%, var(--saffron-soft) 0%, var(--saffron) 38%, color-mix(in oklab, var(--saffron) 40%, var(--bg)) 100%);
+  box-shadow: 0 0 calc(40px + var(--level) * 60px) color-mix(in oklab, var(--saffron) 55%, transparent);
+  transform: scale(calc(1 + var(--level) * 0.18));
+  animation: breathe 6s ease-in-out infinite;
+}
+
+/* A thin ring around the flame: teal when it's your turn, an arc while thinking. */
+.lamp__ring {
+  inset: 18%;
+  border: 1px solid color-mix(in oklab, var(--ring, var(--teal)) 45%, transparent);
+  opacity: 0.5;
+  transform: scale(calc(1 + var(--level) * 0.3));
+}
+
+.lamp--still .lamp__core {
+  width: 40%;
+  height: 40%;
+}
+
+.lamp--still {
+  --size: 120px;
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    filter: brightness(0.92);
+  }
+  50% {
+    filter: brightness(1.06);
+  }
+}
+
+@keyframes turn {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+/* States. Listening: dimmer flame, teal ring. Speaking: the flame follows Fryday's voice. */
+.room[data-state="listening"],
+.room[data-state="hearing"] {
+  --glow: var(--teal);
+}
+
+.room[data-state="listening"] .lamp__core {
+  filter: brightness(0.85);
+}
+
+.room[data-state="hearing"] .lamp__ring {
+  opacity: 0.9;
+  border-width: 2px;
+}
+
+.room[data-state="thinking"] .lamp__ring {
+  inset: 14%;
+  border: 2px solid transparent;
+  border-top-color: var(--saffron);
+  border-right-color: color-mix(in oklab, var(--saffron) 30%, transparent);
+  opacity: 0.9;
+  animation: turn 2.4s linear infinite;
+}
+
+.room[data-state="speaking"] .lamp__ring {
+  --ring: var(--saffron);
+  opacity: 0.35;
+}
+
+.room[data-state="connecting"] .lamp,
+.room[data-state="warming"] .lamp,
+.room[data-state="offline"] .lamp,
+.room[data-state="replaced"] .lamp {
+  filter: grayscale(0.85) brightness(0.7);
+}
+
+.room[data-state="offline"] .lamp__core,
+.room[data-state="replaced"] .lamp__core {
+  animation: none;
+}
+
+/* ---------- Layout ---------- */
+
+.room {
+  height: 100dvh; /* exactly one screen: the transcript, not the page, absorbs overflow */
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: 1rem 1rem 1.5rem;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.telemetry {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem 0.9rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  padding: 0.35rem 0.75rem;
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: var(--step--1);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.telemetry:hover {
+  color: var(--ink);
+}
+
+.telemetry__item {
+  color: var(--ink);
+}
+
+.dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.dot--on {
+  background: var(--teal);
+  box-shadow: 0 0 8px var(--teal);
+}
+
+.stage {
+  display: grid;
+  justify-items: center;
+  gap: 1.25rem;
+  padding: clamp(2rem, 8vh, 4.5rem) 0 1.5rem;
+}
+
+.caption {
+  margin: 0;
+  text-wrap: balance;
+  display: grid;
+  justify-items: center;
+  gap: 0.15rem;
+  text-align: center;
+}
+
+.caption__hi {
+  font: 400 var(--step-2) / 1.3 var(--sans);
+  font-weight: 300;
+}
+
+.caption__en {
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+
+/* ---------- Transcript ---------- */
+
+.transcript {
+  list-style: none;
+  margin: 0;
+  padding: 0.5rem 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 0.9rem;
+  overflow: hidden;
+  /* Older lines fade into the dark rather than ending at a hard edge. */
+  mask-image: linear-gradient(to bottom, transparent 0, #000 35%);
+  min-height: 0;
+}
+
+.line {
+  max-width: 34rem;
+  line-height: 1.75; /* Devanagari's matras need the room */
+}
+
+.line--fryday {
+  align-self: flex-start;
+  font-size: var(--step-1);
+  border-left: 2px solid color-mix(in oklab, var(--saffron) 70%, transparent);
+  padding-left: 0.85rem;
+}
+
+.line--you {
+  align-self: flex-end;
+  text-align: right;
+  color: var(--teal);
+}
+
+.line--notice {
+  align-self: center;
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+
+.line__cut {
+  opacity: 0.6;
+}
+
+/* ---------- Controls ---------- */
+
+.controls {
+  display: flex;
+  justify-content: center;
+  padding-top: 1rem;
+}
+
+.mute {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.7rem 1.3rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.mute--on {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+/* ---------- Stats drawer ---------- */
+
+.drawer {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  left: 1rem;
+  max-width: 26rem;
+  margin-left: auto;
+  padding: 1.1rem 1.25rem 1.25rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 24px 60px -20px rgb(0 0 0 / 0.6);
+  font-variant-numeric: tabular-nums;
+  animation: rise 220ms ease-out;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+.drawer__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.drawer__title {
+  margin: 0 0 0.75rem;
+  font: 400 var(--step-1) / 1.2 var(--serif);
+}
+
+.drawer__close {
+  background: none;
+  border: 0;
+  font-size: var(--step-2);
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.steps,
+.summary {
+  margin: 0;
+}
+
+.steps__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.3rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.steps__row dt {
+  color: var(--muted);
+}
+
+.steps__row dd,
+.summary dd {
+  margin: 0;
+}
+
+.steps__row--total {
+  border-bottom: 0;
+  padding-top: 0.5rem;
+}
+
+.steps__row--total dt,
+.steps__row--total dd {
+  color: var(--saffron);
+  font-weight: 500;
+}
+
+.summary {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem 1rem;
+  margin-top: 0.9rem;
+}
+
+.summary dt {
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+
+.summary dd {
+  font-size: var(--step-1);
+}
+
+.drawer__note {
+  color: var(--muted);
+  font-size: var(--step--1);
+  margin: 0.6rem 0 0;
+}
+
+.drawer__models {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  margin: 0.9rem 0 0;
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+
+/* ---------- Welcome ---------- */
+
+.welcome {
+  min-height: 100%;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 0.5rem;
+  padding: 2rem 1rem;
+  text-align: center;
+}
+
+.welcome__lede {
+  max-width: 26rem;
+  text-wrap: balance;
+  margin: 0.25rem 0 1.5rem;
+  color: var(--muted);
+}
+
+.welcome__form {
+  display: grid;
+  gap: 0.9rem;
+  width: min(100%, 22rem);
+}
+
+.field {
+  display: grid;
+  gap: 0.3rem;
+  text-align: left;
+}
+
+.field__label {
+  font-size: var(--step--1);
+  color: var(--muted);
+}
+
+.field__input {
+  padding: 0.7rem 0.9rem;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+}
+
+.button {
+  padding: 0.75rem 1.2rem;
+  border-radius: 999px;
+  border: 0;
+  background: var(--saffron);
+  color: #1a1206;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.welcome__error {
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--step--1);
+}
+
+.welcome__hint {
+  margin-top: 1.25rem;
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+
+/* ---------- Reduced motion: no breathing or spinning; the level only changes light. ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .lamp__core,
+  .room[data-state="thinking"] .lamp__ring,
+  .drawer {
+    animation: none;
+  }
+
+  .lamp__core,
+  .lamp__glow,
+  .lamp__ring {
+    transform: none;
+  }
+}
+
+@media (max-width: 30rem) {
+  .telemetry {
+    padding-inline: 0.6rem;
+    flex-wrap: nowrap;
+  }
+
+  .telemetry__label {
+    display: none; /* the dot says it */
+  }
+
+  .stage {
+    padding-top: 1.5rem;
+  }
+
+  .lamp {
+    --size: min(48vw, 200px);
+  }
+
+  .line--fryday {
+    font-size: var(--step-0);
+  }
+}

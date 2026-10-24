@@ -43,6 +43,23 @@ flowchart LR
 
 ---
 
+### 2026-10-22: v5 build 5: WebSocket gateway + React app (hands-free in the browser)
+- **Built or watched:**
+  - A `Channel` seam: `VoiceSession` no longer prints or plays; the terminal (`Terminal`) and the browser (`gateway.Connection`) are its two outputs.
+  - `mic.vad_loop` shared by the terminal mic and WebSocket frames; `endpoint()` now returns None when frames run out.
+  - `gateway.py`: FastAPI `/ws` with an Origin check, the token in the first message, protocol v1 with a `v` field, close codes, newest tab wins, `/healthz` and `/readyz`, and one sender queue (barge-in without per-frame turn ids).
+  - `web/`: React + Vite + TypeScript, the "calm lamp" design, a worklet + downsampler for the mic, scheduled Web Audio playback, `played` reports for heard-text, and a latency drawer.
+  - A plan reviewed by two independent subagents first (the second found 15 issues, two of them serious).
+- **Predicted vs actual:** no predictions (owner asked for the whole build in one go). End to end in a headless browser: you stop → Fryday speaks in 2.1 s median warm, 10 s cold (EXPERIMENTS).
+- **Surprised me:**
+  - A transferred `ArrayBuffer` leaves its typed array with length 0: the worklet looped forever and froze the tab.
+  - `asyncio` clean-up in `finally` can itself be cancelled half-way; `asyncio.shield` lets it finish.
+  - Process-wide resources (the tracing client) don't belong to an app instance: tests that build many apps exposed it.
+  - Socket order alone makes barge-in safe: `allow(n+1)` then `speech`, so everything before `speech` is stale.
+- **I can now explain:** why the WebSocket token goes in the first message and not the URL; why the browser downsamples instead of asking for a 16 kHz AudioContext; why `played` reaches the server before the next turn starts.
+- **Still don't get:** no quiz yet (see the why-questions below).
+- **Tomorrow's first step:** a real-mic session in the browser with `make llm` + `make serve`: measure first audio, and speakers vs headphones (self-barge-in).
+
 ### 2026-10-22: v5 builds 1–4 (first chunk, VAD, turn manager + barge-in, heard-text) and the reply-script spike
 - **Built or watched:**
   - Build 1 (10-21): short first chunk, so TTS starts on the first clause or about 6 words. First token → first audio went from 1,241 to 816 ms.

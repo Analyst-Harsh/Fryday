@@ -23,11 +23,15 @@ class TurnManager:
         self.turn_id = 0
         self._task: asyncio.Task[None] | None = None
 
-    def interrupt(self) -> None:
+    def interrupt(self) -> asyncio.Task[None] | None:
+        """Silence and cancel the current turn; returns its task if one was still running,
+        for callers that must wait until it has stopped (gather(..., return_exceptions))."""
         self.turn_id += 1
         self._allow_audio(self.turn_id)  # before cancel: silence is the urgent part
         if self._task is not None and not self._task.done():
             self._task.cancel()
+            return self._task
+        return None
 
     def start(self, pcm: bytes) -> asyncio.Task[None]:
         self.interrupt()

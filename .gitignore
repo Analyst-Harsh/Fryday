@@ -14,3 +14,8 @@ htmlcov/
 /data/
 # guard for the phase-0 gitleaks test (planted fake secret)
 leak.txt
+
+node_modules/
+dist/
+
+.playwright*

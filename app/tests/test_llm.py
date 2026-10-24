@@ -226,3 +226,15 @@ def test_reply_stopped_early_closes_the_stream_in_its_thread(
 
     assert asyncio.run(take_one())
     assert produced == ["a", "b"]  # stopped at the next delta, never asked for "c"
+
+
+def test_ping_is_true_when_the_server_lists_models_and_false_when_it_is_down() -> None:
+    def up(request: httpx2.Request) -> httpx2.Response:
+        assert request.url.path.endswith("/models")
+        return httpx2.Response(200, json={"object": "list", "data": []})
+
+    def down(_request: httpx2.Request) -> httpx2.Response:
+        raise httpx2.ConnectError("connection refused")
+
+    assert fake_llm(up).ping()
+    assert not fake_llm(down).ping()

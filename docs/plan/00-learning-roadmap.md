@@ -335,10 +335,10 @@ Each version lists what you **learn** (interview topics), what you **build**, th
 - **Build:**
   - a FastAPI WebSocket gateway (token auth in the first message, Origin check, protocol `v` field);
   - measure reply script vs first audio: Devanagari replies vs Roman replies plus transliteration before TTS (left over from S0-8, 2026-10-20);
-  - a turn manager and a thin JS mic client;
+  - a turn manager and a browser mic client (React + Vite + TypeScript, owner's choice 2026-10-22);
   - per-hop spans;
   - the full memory-fit run (S0-2), with early RSS checks already done in v3 and v4 as each model was added;
-  - **Silero VAD endpointing** as an optional hands-free mode (tap-to-talk stays the default), with the end-of-speech threshold measured;
+  - **Silero VAD endpointing**: hands-free is the browser default (decided 2026-10-22; the terminal keeps push-to-talk), with the end-of-speech threshold measured;
   - a `reply(history) -> AsyncIterator[ReplyEvent]` seam over `LLMClient.stream()` (text deltas now; v1 adds tool and filler events behind it);
   - the database baseline: Postgres driver and pool, Alembic with the first migration (the per-user daily minute-cap table), forward-only migrations with a rollback note.
 - **Production:**

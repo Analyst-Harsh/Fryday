@@ -4,6 +4,7 @@ version = "0.0.1"
 description = "Fryday app service (FastAPI gateway, agent, memory, backends)"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "fastapi>=0.159",
     "httpx2>=2.13.1",
     "huggingface-hub>=0.30",
     "langfuse>=4.17",
@@ -17,11 +18,14 @@ dependencies = [
     "silero-vad>=6.2.3",
     "sounddevice>=0.5",
     "structlog>=26.1.0",
+    "uvicorn>=0.54",
+    "websockets>=15",
 ]
 
 [project.scripts]
 fryday-chat = "fryday.cli:main"
 fryday-talk = "fryday.talk:main"
+fryday-serve = "fryday.gateway:main"
 
 [build-system]
 requires = ["uv_build>=0.11,<0.12"]
