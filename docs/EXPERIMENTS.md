@@ -12,6 +12,28 @@ Every result goes here, **including negative ones** (roadmap working principles)
 - **Decision:** what changes because of this (HLD/roadmap update, next step).
 ```
 
+## 2026-10-25: Real mic in the browser: server latency vs what the user hears (v5 leftover, hero video)
+- **Question:** what does a real person on a real mic get, and how does the server's number compare with the gap a listener actually hears?
+- **Setup:** `make llm` + `make serve` (commit `e766b93`), Chrome, MacBook built-in mic and **laptop speakers (no headphones)**. 11 turns in one sitting: a 5-turn practice, then the hero-video recording (macOS screen recording, mic audio). Server times come from the `voice_turn` log. Voice→voice was measured in the recording's audio (RMS, from the end of the user's voice to the start of Fryday's).
+- **Result:**
+  - **Server "you stop → Fryday speaks"** (includes the 500 ms VAD wait), 10 warm turns: **median 1.97 s**, range 1.57–2.65 s, plus one outlier at **4.69 s** (ASR 1.95 s, not explained). Cold first turn: 3.34 s (ASR 2.03 s).
+  - **Voice→voice as heard in the recording, for 3 turns:**
+
+    | Turn | Server | Heard (−55 dBFS end of voice) | Difference |
+    |---|---|---|---|
+    | 1 | 2.52 s | 3.26 s | +0.74 |
+    | 2 | 1.95 s | 2.77 s | +0.82 |
+    | 3 | 1.61 s | 2.34 s | +0.73 |
+
+    With a looser −50 dB threshold on the user's fading voice, the heard gaps are 3.2, 2.7 and 2.3 s. The video's counters and end card ("~2.8 s", 2.3–3.3 s) use the stricter numbers.
+  - **A user hears ~0.7–0.8 s more than the server reports, consistently.** The server clock starts after VAD has already seen part of the trailing silence, and it ends when the first audio leaves the server, not when it plays. The browser's own "first audio, this browser" (about +0.5 s) covers part of that gap.
+  - **Barge-in:** 4 `reply_trimmed` events. One was the intended interruption (heard_bytes 107,678). Whether the other 3 were the user or Fryday hearing itself through the speakers was **not checked**.
+  - **Bug found:** the LLM put 😊 in replies despite the "no emojis" prompt. The normaliser passed it through, and Kokoro read it aloud ("मुस्काती आंखों वाला मुस्काता चेहरा"). It was cut from the video, but not fixed in code yet.
+- **Decision:**
+  - Public claims use the **heard voice→voice number** (~2.8 s median in the video, 2.3–3.3 s), never the server number. The video covers the app's chip.
+  - Two fixes to make: strip emoji in the normaliser, and make the app's headline latency measure from the end of speech to playback start in the browser.
+  - Still not measured: self-barge-in on speakers vs headphones, and p95 over 20+ turns.
+
 ## 2026-10-24: Browser end to end, rerun after the session.ts / gateway.py splits (v5 close)
 - **Question:** does the browser path still work after the PR #8 readability splits?
 - **Setup:** same as 2026-10-22: `make llm` + `make serve` (started fresh), the rebuilt React app, headless Chromium with the Kokoro-spoken "आज मौसम कैसा है?" as the fake mic. Commit `daedc18`. **1 turn (cold).**
