@@ -34,6 +34,7 @@ flowchart LR
 | 2026-11-02 | (F5 quiz, skipped) (1) Explain what happens to one token passing through a Block: LayerNorm, attention, feed-forward, residual, and what each is *for*. (2) Dropout made the 210K model worse and the train/val gap didn't shrink: what did that say about the gap? (3) Why does greedy (temperature 0) loop on "the state of the state…", and what do temperature 1.0 + top-k do differently? | due 2026-11-09 | due 2026-11-30 |
 | 2026-11-10 | (F6 quiz, skipped) (1) Explain `GroupedQueryAttention.forward` without looking: the uneven split, the fold of query heads into rows, and why k/v are never copied. (2) Batched heads, RMSNorm and the GQA fold: which one got faster, which got slower, and what one thing explains all three on MPS? (3) Why does GQA barely matter for training but multiply how many users a server can hold? | due 2026-11-17 | due 2026-12-08 |
 | 2026-11-11 | (v9 learn + B1–B4, no quiz) (1) Explain without looking what happens in one engine step: decode, retire, admit, and why that order. (2) Why did the KV cache cut the work 32× but the time only ~1.2×, and why does paging save nothing for outputs near ctx_len? (3) Two Fryday users share a system prompt: walk through which pages the second one reuses, what its ref counts become, and what happens when memory gets tight. | due 2026-11-18 | due 2026-12-09 |
+| 2026-11-12 | (v9 vllm-metal timebox, quiz skipped) (1) Which bytes does one decode step read, and which of them grow with batch size? Use it to explain why tok/s flattened from 4 → 8 users with 91% of the KV pool free. (2) Two separate limits: what does `--max-model-len` cap, what does the KV pool cap, and why does vLLM say 2.77× concurrency when ~40 Fryday turns fit? (3) What does vLLM do with memory at startup, and how does that differ on a dedicated CUDA GPU vs the Mac's unified memory? | due 2026-11-19 | due 2026-12-10 |
 
 ## Entry template
 ```markdown
@@ -45,6 +46,26 @@ flowchart LR
 - **Still don't get:**
 - **Tomorrow's first step:**
 ```
+
+---
+
+### 2026-11-12: v9 close, vllm-metal timebox, vLLM becomes the local LLM server
+- **Built or watched:**
+  - The vllm-metal docs and its supported-models matrix (architecture × checkpoint format).
+  - vllm-metal 0.33.0 via Homebrew; Fryday's 4-bit Qwen3-4B served by `vllm serve` on :8080, with no app change (the OpenAI-API seam held).
+  - `spikes/learn/v9_engine_bench.py`: N concurrent voice turns → TTFT and tok/s, plus vLLM's `/metrics` (peak KV, running/waiting, pre-emptions, prefix hit) and engine memory from `footprint`.
+  - `make llm` now runs vLLM (`make llm-mlx` is the fallback); EXPERIMENTS, HLD, README, roadmap v9, production gaps #41–42. Claude wrote the code; the owner chose the design (vLLM for local development).
+- **Predicted vs actual:**
+  - Peak KV at 8 users: **15% → 8.9%** (the system prompt's pages are shared; each extra user adds ~1%, not 2.3%).
+  - The other predictions (vLLM vs mlx at 1 and 8 users) were not given.
+- **Surprised me:**
+  - The default 256K context needs **36 GiB** of KV, so vLLM refused to start; our KV formula gave exactly the same number.
+  - `mlx_lm.server` batches now: a near tie at 1–8 users. vLLM's edge (paging, pre-emption) only appears under memory pressure.
+  - The KV pool is sized from whatever RAM is free at startup and held until shutdown: 1.27 → 1.67 GB across three starts.
+  - `ps` RSS showed 709 MB; `footprint` showed 3.7 GB (it counts Metal buffers).
+- **I can now explain:** what makes a model servable on vllm-metal (architecture + checkpoint format); `--max-model-len` (per-request cap) vs the KV pool (shared budget); vLLM's startup (weights → profile run → KV budget → allocate every block → warm-up); dedicated GPU (fixed pool, fails fast) vs unified memory (shrinks, swaps); vLLM's metrics (gauges vs counters, sampling peaks); mlx_lm vs vLLM (contiguous padded caches vs pages; what vLLM adds); vLLM as an engine + an optional server.
+- **Still don't get:** partly right on the 4 → 8 flattening ("copying KV to the GPU"): nothing is copied on unified memory, and weights (~2.3 GB) dominate the bytes read, not KV (~140 MB). The re-ask is in the table above.
+- **Tomorrow's first step:** try `--kv-cache-memory-bytes 1.5G` in `make llm` (does vllm-metal honour a fixed pool?), then the v9 interview session (I), then v8 learn 1 (Triton concepts). The F4/F5/F6/v9 re-asks are due.
 
 ---
 
