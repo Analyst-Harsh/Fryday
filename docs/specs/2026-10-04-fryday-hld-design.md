@@ -39,7 +39,7 @@ Fryday is a Hinglish hands-free voice assistant whose real purpose is **learning
 | GPU | Provider **chosen before phase 11** after a price comparison. Criteria: direct VM SSH with `-L` forwarding, Docker + NVIDIA toolkit, `SYS_ADMIN` allowed (Nsight), a 24 GB card (L4 class), and persistent model-cache storage. On demand, in scripted sprints only |
 | Mac↔GPU link | **SSH tunnel** (local port forwarding), key-only, no public ports except sshd |
 | Runtime | Production-grade engineering, on-demand runtime; showcase = recorded demo + benchmark numbers |
-| Serving | Same contracts on both machines. Triton for ASR, TTS and embeddings on the GPU, and on the Mac (CPU) **if spike 0 passes**; otherwise plain ONNX Runtime/CT2 behind the same KServe v2 contract. LLM through an OpenAI-compatible API: MLX-LM (native, not Docker) on the Mac, vLLM on the GPU |
+| Serving | Same contracts on both machines. Triton for ASR, TTS and embeddings on the GPU, and on the Mac (CPU) **if spike 0 passes**; otherwise plain ONNX Runtime/CT2 behind the same KServe v2 contract. LLM through an OpenAI-compatible API: vLLM on both, vllm-metal (native, not Docker) on the Mac and vLLM on CUDA on the GPU; `mlx_lm.server` is the Mac fallback (changed 2026-11-12: same speed at Fryday's load, chosen to learn the production engine; EXPERIMENTS 2026-11-12) |
 | Voice input | **Hands-free** (2026-10-22, v5): the browser streams its mic; Silero VAD on the server ends a turn after 500 ms of silence and fires barge-in on speech start. The terminal keeps push-to-talk as an option (`make talk`) |
 | Script convention | **Decided in spike 0**. Option A: Roman Hinglish inside the pipeline, converted to Devanagari only for TTS. Option B: Devanagari for Hindi words everywhere |
 | CUDA | Working principles through profiling; no kernel track |
@@ -141,7 +141,7 @@ Exact IDs were checked against model cards on 2026-10-04 unless marked *(verify)
 | Role | Candidates | Work | Mac build | GPU build |
 |---|---|---|---|---|
 | ASR | `openai/whisper-large-v3-turbo` (MIT); `Oriserve/Whisper-Hindi2Hinglish-Apex` (Apache-2.0, outputs Roman Hinglish), `…-Prime` as the alternative; streaming-native: `nvidia/nemotron-3.5-asr-streaming-0.6b` (OpenMDW, ungated, Hindi included) | LoRA for named entities; quantise | CT2 int8 or ONNX (Python/ORT backend) | CT2 fp16/int8 via the Triton **Python backend** (no official CT2 backend); TensorRT-LLM Whisper encoder as an experiment |
-| LLM | `Qwen/Qwen3-4B-Instruct-2507` (Apache-2.0, ungated) as the default; any newer **ungated** 2026 3–4B release with tool calling may join the baseline | LoRA SFT for tool calls and spoken Hinglish; merge; 4-bit | MLX 4-bit via `mlx_lm.server` (OpenAI-compatible, streaming; tool-call parsing per model and streaming+tools **unverified** → spike S0-3; validate-and-repair) | vLLM AWQ/GPTQ (verify on L4) |
+| LLM | `Qwen/Qwen3-4B-Instruct-2507` (Apache-2.0, ungated) as the default; any newer **ungated** 2026 3–4B release with tool calling may join the baseline | LoRA SFT for tool calls and spoken Hinglish; merge; 4-bit | MLX 4-bit via vllm-metal (`mlx_lm.server` as fallback; OpenAI-compatible, streaming; tool-call parsing per model and streaming+tools **unverified** → spike S0-3; validate-and-repair) | vLLM AWQ/GPTQ (verify on L4) |
 | TTS | **`hexgrad/Kokoro-82M`** (Apache-2.0) via `mlx-community/Kokoro-82M-bf16`, voice `hf_alpha`, Devanagari input (decided in v3, 2026-10-16/20, EXPERIMENTS). Alternative for the GPU stage: `nvidia/magpie_tts_multilingual_357m` (NVIDIA Open Model License, Hindi; batched/sliding-window, **not** native streaming); fallback `facebook/mms-tts-hin` *(licence verify)* | Fix one voice; no fine-tuning in v1 | PyTorch/NeMo in the Triton Python backend | Same, as chunked unary calls; ONNX/TRT is a stretch (unproven) |
 | Embeddings | `BAAI/bge-m3` (MIT); fallback `intfloat/multilingual-e5-small` (MIT) on the Mac | None; chosen as the easy TensorRT target | ONNX | TensorRT fp16 |
 | VAD (later) | Silero VAD (MIT) | — | CPU | — |
@@ -206,7 +206,7 @@ Exact IDs were checked against model cards on 2026-10-04 unless marked *(verify)
 
 ## 6. Running it: environments, network, cost
 **Mac (16 GB) compose profiles:**
-- `core`: app + Postgres + model backends, with MLX-LM native on the host.
+- `core`: app + Postgres + model backends, with vllm-metal native on the host (`make llm`).
 - `obs`: Prometheus (opt-in).
 - Langfuse is in the cloud, so there is no local tracing stack.
 - Memory is checked in spike 0.

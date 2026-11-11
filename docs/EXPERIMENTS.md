@@ -12,6 +12,35 @@ Every result goes here, **including negative ones** (roadmap working principles)
 - **Decision:** what changes because of this (HLD/roadmap update, next step).
 ```
 
+## 2026-11-12: vllm-metal vs mlx_lm.server under concurrent users (v9 timebox)
+- **Question:** does vLLM on the Mac GPU (vllm-metal) beat `mlx_lm.server` for Fryday's model as concurrent users grow, and what does vLLM's own view (KV use, pre-emption, prefix cache, memory) look like?
+- **Setup:** MacBook, 16 GB unified memory (17.2 GB reported), macOS 27.0.1. `mlx-community/Qwen3-4B-Instruct-2507-4bit` on both. vllm-metal 0.33.0 (Homebrew; vLLM 0.33.0, torch 2.16 nightly), `--max-model-len 4096`, default `gpu_memory_utilization` 0.92. mlx-lm 0.32.2, default flags. `spikes/learn/v9_engine_bench.py` (base commit `212afa7`): N users fire one voice turn each at once (Fryday's voice system prompt + one Devanagari question, Fryday's sampling settings, streaming), 3 rounds per N, one warm-up. One server at a time on :8080.
+- **Result:**
+  - **Startup:** the first two tries failed at KV planning. The default max len (262,144) needs **36.0 GiB** of KV; the KV formula gives the same: 2 × 36 layers × 8 KV heads × 128 × 2 B = 144 KiB/token. 8,192 needed 1.12 GiB with 1.08 GiB available. 4,096 started in **23 s**.
+  - **KV pool depends on free RAM at startup:** vLLM aimed for 8.62 GB, saw macOS compressing memory when it forced a 512 MiB sample resident, and sized down: 1.27 → 1.38 → **1.67 GB** across three starts (539 → 583 → 708 blocks; the last = 11,328 tokens).
+  - **Head to head** (TTFT p50 / p95, total output tok/s):
+
+    | N | vllm-metal | mlx_lm.server |
+    |---|---|---|
+    | 1 | 0.14 / 0.14 s, 47.5 | 0.12 / 0.16 s, 45.1 |
+    | 2 | 0.15 / 0.22 s, 80.3 | 0.17 / 0.24 s, 68.4 |
+    | 4 | 0.14 / 0.16 s, 119.9 | 0.13 / 0.30 s, 105.9 |
+    | 8 | 0.23 / 0.23 s, 149.0 | 0.13 / 0.27 s, 144.6 |
+
+    **A near tie.** mlx-lm 0.32.2 batches too (`--decode-concurrency`, `--prompt-concurrency`, a prompt cache): 3.2× throughput from 1 → 8 users vs vLLM's 3.1×. vLLM's TTFT p95 is a little steadier (0.16–0.23 vs 0.24–0.30 s), with only 9–24 samples per cell.
+  - **vLLM's /metrics** (rerun with a 0.25 s sampler; 708-block pool):
+
+    | N | TTFT p50 / p95 | tok/s | peak KV | peak running / waiting | pre-emptions | prefix hit |
+    |---|---|---|---|---|---|---|
+    | 1 | 0.14 / 0.14 s | 47.5 | 2.3% | 1 / 0 | 0 | 74.0% |
+    | 2 | 0.16 / 0.20 s | 76.8 | 3.1% | 2 / 0 | 0 | 81.4% |
+    | 4 | 0.16 / 0.23 s | 123.6 | 5.4% | 4 / 0 | 0 | 87.9% |
+    | 8 | 0.22 / 0.24 s | 131.4 | 8.9% | 8 / 0 | 0 | 92.5% |
+
+    Predicted peak KV at 8 users: 15%; actual **8.9%**. The system prompt's pages are shared, so each extra user adds ~1%, not 2.3%. Throughput flattens from 4 → 8 users with 91% of the pool free, so memory isn't the limit (likely compute on 4-bit dequant, per-step overhead and straggler replies at the end of each round).
+  - **Engine memory:** macOS `footprint` 3,693 MB now, **4,052 MB peak** (2,935 MB of it `IOAccelerator (graphics)`: weights + KV). `ps` RSS shows only 709 MB: it misses Metal buffers.
+- **Decision:** at Fryday's load (1–8 short turns), vLLM's paging and pre-emption never engage, so the speed is the same. The owner chose **vLLM for local development** anyway, to learn the production engine: `make llm` now runs `vllm serve … --max-model-len 4096`, with `make llm-mlx` as the fallback. The head-to-head under memory pressure stays in v13 on a CUDA GPU. Open: does vllm-metal honour `--kv-cache-memory-bytes` (a fixed pool every start)?
+
 ## 2026-10-25: Real mic in the browser: server latency vs what the user hears (v5 leftover, hero video)
 - **Question:** what does a real person on a real mic get, and how does the server's number compare with the gap a listener actually hears?
 - **Setup:** `make llm` + `make serve` (commit `e766b93`), Chrome, MacBook built-in mic and **laptop speakers (no headphones)**. 11 turns in one sitting: a 5-turn practice, then the hero-video recording (macOS screen recording, mic audio). Server times come from the `voice_turn` log. Voice→voice was measured in the recording's audio (RMS, from the end of the user's voice to the start of Fryday's).
