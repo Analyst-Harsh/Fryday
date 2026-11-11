@@ -568,6 +568,7 @@ Each version lists what you **learn** (interview topics), what you **build**, th
   - chaos engineering.
 - Load test (k6 or Locust): E9 (KV cache and batching vs concurrency), E10 (max concurrency at the SLO), E11 (cost per conversation-minute).
 - Set the admission limit from the data.
+- **Load-test the voice pipeline + tune vLLM (added 2026-11-11, from v9):** drive N concurrent WebSocket voice turns (not just raw LLM requests), find which hop breaks first, then tune vLLM one knob at a time from that data: `max_num_seqs`, `gpu_memory_utilization`, prefix caching on the shared system prompt, warm-up before ready, and sticky (prefix-aware) routing if there is more than one replica. Report first-audio p95 before vs after.
 - Chaos: drop the tunnel mid-spend.
 - Record the demo; write the README.
 - **Source:** old phase 14.
