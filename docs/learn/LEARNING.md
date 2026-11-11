@@ -30,6 +30,10 @@ flowchart LR
 | 2026-10-18 | (v3 learn 2 quiz, skipped) (1) Explain MOS, why one listener's rating means little, and what a ±0.44 95% CI tells you. (2) Give two reasons UTMOS ranked mispronounced `hi_roman` above `hi_deva`. (3) "सात" was flagged missing in every Hindi file: whose fault, and how do you fix the check without hiding real TTS errors? | due 2026-10-25 | due 2026-11-15 |
 | 2026-10-22 | (v5 builds, why-questions not answered) (1) Why does `interrupt()` call `allow()` before `cancel()`, and would you hear a difference if they were swapped? (2) `played()` counts bytes **written** to the device: is the heard-text cut early or late, and by about how much? (3) Why did a Devanagari question pull "Roman" replies back into Devanagari, and what does that mean for a user who types in Devanagari? (4) Why is `stop` a `threading.Event` and not an asyncio object? | due 2026-10-29 | due 2026-11-19 |
 | 2026-10-24 | (v5 walkthrough, why-questions not answered) (1) Why does the worklet's batching loop use `Math.min`? (2) Why does the Downsampler keep a fractional `pos`? (3) Why does `playedBytes` count PCM16 bytes, not Float32? (4) Why does `retryMs` reset on `ready`, not on `onopen`? (5) Why does `start()` call `connect()` last? (6) Why does the lamp use rAF + a CSS variable instead of `useState`? (7) Why does tab B wait on `old.closed`? (8) Why does `send_loop` drop audio but never events? (9) Why does the server's VAD, not the browser, decide barge-in? (10) Why does `vad_loop` make a new VAD per utterance? | due 2026-10-31 | due 2026-11-21 |
+| 2026-11-01 | (F4 quiz, skipped) (1) Explain `Head.forward` from `x` to `out` in your own words: what each step is *for*. (2) Why scale scores by `1/√head_size`, and what breaks without it? (3) Why was the head model's step-0 loss (4.20) so close to ln(65) = 4.17, when the bigram's was 4.72? | due 2026-11-08 | due 2026-11-29 |
+| 2026-11-02 | (F5 quiz, skipped) (1) Explain what happens to one token passing through a Block: LayerNorm, attention, feed-forward, residual, and what each is *for*. (2) Dropout made the 210K model worse and the train/val gap didn't shrink: what did that say about the gap? (3) Why does greedy (temperature 0) loop on "the state of the state…", and what do temperature 1.0 + top-k do differently? | due 2026-11-09 | due 2026-11-30 |
+| 2026-11-10 | (F6 quiz, skipped) (1) Explain `GroupedQueryAttention.forward` without looking: the uneven split, the fold of query heads into rows, and why k/v are never copied. (2) Batched heads, RMSNorm and the GQA fold: which one got faster, which got slower, and what one thing explains all three on MPS? (3) Why does GQA barely matter for training but multiply how many users a server can hold? | due 2026-11-17 | due 2026-12-08 |
+| 2026-11-11 | (v9 learn + B1–B4, no quiz) (1) Explain without looking what happens in one engine step: decode, retire, admit, and why that order. (2) Why did the KV cache cut the work 32× but the time only ~1.2×, and why does paging save nothing for outputs near ctx_len? (3) Two Fryday users share a system prompt: walk through which pages the second one reuses, what its ref counts become, and what happens when memory gets tight. | due 2026-11-18 | due 2026-12-09 |
 
 ## Entry template
 ```markdown
@@ -41,6 +45,81 @@ flowchart LR
 - **Still don't get:**
 - **Tomorrow's first step:**
 ```
+
+---
+
+### 2026-11-11: v9 learn 1–3 + builds B1–B4, in pico-vllm
+- **Built or watched:**
+  - Anyscale *Fast LLM Serving with vLLM and PagedAttention*, *The KV Cache* video, the vLLM launch blog and Anyscale's continuous-batching post (the vLLM paper skipped).
+  - pico-vllm branch `v9`: **B1** `KVCache` + `generate_cached` (prefill once, then one token per step); **B2** `BlockAllocator` + `PagedKVCache` (pages on demand, block tables); **B3** `engine.py` (`Sequence`, `step()` = decode → retire → admit, FIFO, recompute preemption, static baseline) + `bench.py`; **B4** prefix caching (chained page names, ref counts, LRU eviction). Code written by Claude on request, then walked through step by step in pictures and plain words. B5 (reading vLLM's code) skipped; v7a lite skipped too.
+  - DESIGN: the KV-size formula (ours and Qwen3-4B) and the metric definitions. Four EXPERIMENTS entries.
+- **Predicted vs actual** (most predictions not given this time):
+  - KV cache: 32× fewer token positions but only **1.1–1.4× faster**; MPS ~6× slower than CPU for this model.
+  - Paging: short outputs hold **25–50%** of the memory; near ctx_len, **no saving**.
+  - Continuous vs static: **2.1× fewer steps**, utilisation 41% → 89%, TTFT p50 **139 → 8** steps; a tight pool still wins but pays in preemptions (p99 TPOT 6.4).
+  - Prefix caching on a shared 32-token system prompt: **79% hit rate**, peak pages 27 → 13; with tight memory 205 → 118 steps, TTFT p50 55 → 1.
+- **Surprised me:**
+  - Less work isn't less time on a tiny model: fixed per-step overhead hides the cache's win.
+  - Paging only saves the unused tail; its real value appears with mixed lengths and many users.
+  - Prefix caching helps most through **memory** (more users fit), not just skipped prefill. Our step count doesn't weigh prefill length, so it under-reports the TTFT win.
+- **I can now explain:** prefill vs decode and why decode is memory-bound; the KV formula; reserved / internal / external fragmentation; pages, the block table and the page desk (double free, out of blocks); continuous vs static batching on a timeline; how vLLM handles memory exhaustion (admission control + recompute preemption); TTFT / TPOT / throughput / goodput / p99 / Little's law; prefix caching (chained names, live vs revived hits, ref counts, LRU, duplicates, prefix-aware routing); engine vs server and why only one layer batches; the non-LLM stack (ONNX → TensorRT → Triton, ONNX Runtime + TensorRT EP, `torch.compile`, what production mostly runs); TensorRT-LLM's equivalents.
+- **Still don't get:** no quiz; 3 questions are in the table above.
+- **Tomorrow's first step:** merge the v9 PR, then back in Fryday: add a "load-test the voice pipeline + tune vLLM (max_num_seqs, gpu_memory_utilization, prefix caching, warm-up, sticky routing)" item to the roadmap, then the vllm-metal vs `mlx_lm.server` timebox. The F4/F5/F6/v9 re-asks are due.
+
+---
+
+### 2026-11-10: F6 modern architecture (learn + 3 builds), in pico-vllm
+- **Built or watched:**
+  - Umar Jamil, *LLaMA explained* (watched before the session).
+  - pico-vllm branch `f6`: `CausalSelfAttention` in `model.py` (all heads in one matmul via `view`/`transpose`); `modern.py` with `RMSNorm` (now `F.rms_norm`), `GroupedQueryAttention` (`n_kv_head`; query heads folded into rows so k/v are never copied) and `ModernGPT`/`ModernBlock` (flags `rmsnorm`, `n_kv_head`). Code written by Claude on request, then walked through step by step.
+  - Nine training runs (pico-vllm EXPERIMENTS 2026-11-10).
+- **Predicted vs actual:**
+  - Batched heads: not predicted → 4 heads 110 → **82 s**, 8 heads 158 → **87 s**; loss unchanged.
+  - RMSNorm "same loss, slightly faster" → same loss ✅, **~10% slower** ❌ (hand-written ~6 kernels vs LayerNorm's 1). `F.rms_norm` "back to ~81 s" → **88 s** ❌.
+  - GQA "small loss for 2, bigger for 1" → n_kv 2 costs **~0.015** val (two runs agree); n_kv 1 inside the noise after one run. Train loss did rise in order 4 → 2 → 1.
+  - Fold instead of `repeat_interleave`, "about the same" → **101 → 85 s** ❌, back to MHA speed.
+- **Surprised me:**
+  - On MPS a tiny model is timed by **kernel launches**, not FLOPs: every speed-up came from removing ops, and fewer FLOPs (RMSNorm) still ran slower.
+  - The same config with the same seed gives val ±0.005 between runs on MPS: one run can't separate effects of 0.01.
+  - GQA's win isn't in training at all: it's the KV cache at serving (Llama 3 8B, 8K ctx: 4 GB → 1 GB per sequence, so ~4× more users).
+- **I can now explain:** batched heads (`view` splits C into heads, `transpose` makes heads a batch dim, `@` multiplies only the last two dims); why `.contiguous()` before `view`; RMSNorm vs LayerNorm (scale without centring, one reduction, no bias, Llama standard); "number of heads" means query heads per block, `n_kv_head` counts the shared k/v sets; MHA / GQA / MQA are one class with `n_kv_head` = n_head / between / 1; what a kernel and a launch are; VRAM → VRAM copies vs CPU → GPU transfers, and unified memory on the Mac; how production does GQA (the fold + fusion + SRAM tiles, k/v read once).
+- **Still don't get:** quiz skipped; the 3 questions are in the table above.
+- **Tomorrow's first step:** merge the F6 PR, then **v9 learn 1** in pico-vllm: the KV cache and why decode is memory-bound (v7a lite skipped, owner's call). The F4/F5/F6 re-asks are due.
+
+---
+
+### 2026-11-02: F5 tiny GPT 2/2 (learn + build), in pico-vllm
+- **Built or watched:**
+  - Karpathy, *Let's build GPT*, multi-head attention to the end.
+  - pico-vllm branch `f5`: `MultiHeadAttention` (concat + proj), `FeedForward` (4× wide, ReLU), pre-norm `Block` with residuals, `GPT` (n_layer Blocks, ln_f, N(0, 0.02) init), `sample.py` (temperature, top-k, seeded generator) wired into `generate`. Code written by Claude on request, then walked through step by step (MHA 5 steps, FFN 4, Block 3, GPT 4).
+  - Six training runs, an attention-pattern analysis and a head-count sweep (pico-vllm EXPERIMENTS 2026-11-02).
+  - ROADMAP: new v9 B0 (batched heads) and an enhancements backlog of production upgrades.
+- **Predicted vs actual:**
+  - First GPT (210K) val ~2.0 → **1.73** (better than predicted).
+  - Dropout 0.2 val ~1.65 → **1.83** ❌ worse, gap unchanged.
+  - Wider + ctx 64 (817K): "no dropout wins" ✅ → **1.585** vs 1.63 with dropout.
+  - Heads look at "start of word" → partly: one head puts 80% on the **space before** the word; none specialises in the first letter.
+  - Head count "4 > 8 > 1" → **no difference** (1.5858 / 1.5851 / 1.5846, within noise).
+- **Surprised me:**
+  - A train/val gap isn't proof of overfitting; dropout only helps once val stalls while train keeps falling.
+  - Attention stats mean nothing without a uniform baseline: "far back" looked long-range until uniform attention scored 0.67 and every head was below it.
+  - 8 heads took 2× the wall time of 4 at equal params: the heads run in a Python loop, one small GPU launch each.
+- **I can now explain:** why several small heads (different relationships, same params: 3·n_embd²); why `proj` after concat (heads can't combine otherwise); FFN's job (each token "concludes" from what it gathered; most params live there); LayerNorm in plain words (a volume reset on the copy fed to each sub-layer); the residual (add an update, never overwrite; a gradient highway); a Block's output is the same token's contextual embedding; why small init gives step-0 ≈ ln(V); temperature and top-k; parameter counts by hand (209,729 and 816,705 matched).
+- **Still don't get:** quiz skipped; the 3 questions are in the table above.
+- **Tomorrow's first step:** F5 quiz, merge the F5 PR, then F6 (Karpathy *Deep Dive*, Umar Jamil *LLaMA explained*: RoPE, RMSNorm, GQA).
+
+---
+
+### 2026-11-01: F4 tiny GPT 1/2 (learn + build), in pico-vllm
+- **Built or watched:**
+  - Karpathy, *Let's build GPT*, up to and including "version 4: self-attention"; the F4 PyTorch primer (now a notebook).
+  - pico-vllm PR #1: `CharTokenizer` + 90/10 split + `get_batch`; `BigramLanguageModel`; causal self-attention `Head`; `SingleHeadLanguageModel` (token + position embeddings → head → lm_head); `train.py --model {bigram,head}`. The code was written by Claude on the owner's request, then walked through step by step.
+  - A 9-step dry run of the whole model on `"aba"` (V=3, n_embd=2): embeddings → q,k,v → q@kᵀ → mask + softmax → wei@v → lm_head → loss → backward → generate.
+- **Predicted vs actual:** vocab 65 → **65** ✅. Bigram step 0 ~4 → **4.72**; final ~2.5 → **2.49** ✅. One head final ~2.4 → **2.41** ✅ (pico-vllm EXPERIMENTS 2026-11-01).
+- **Surprised me:** one attention head only beat the bigram by 0.08. Context of 8 chars and one head isn't much to use. Step 0 differs by init: a raw embedding table gives confident wrong logits (4.72); a small-init lm_head gives near-uniform ones (≈ ln 65).
+- **I can now explain:** why tensors and not objects; why embeddings are learned; what `.T`, `.item()`, `multinomial` and `logits[:, -1, :]` do; position embeddings (attention is order-blind); q/k/v and what `out` means (each position rewritten with its past, one prediction slot per position); why `generate` recomputes everything (the KV-cache motivation).
+- **Still don't get:** quiz skipped; the 3 questions are in the table above.
+- **Tomorrow's first step:** F4 quiz, then merge PR #1 and start F5 (rest of the video: multi-head attention, FFN, blocks).
 
 ---
 
