@@ -461,7 +461,7 @@ Each version lists what you **learn** (interview topics), what you **build**, th
     4. prefix caching: shared prefix blocks with ref counts;
     5. measure static vs continuous batching with scheduler metrics (tokens per step, batch utilisation, wasted padding). On MPS a tiny model is dominated by launch and Python overhead, so wall-clock curves would mislead.
   - a guided read of vLLM's scheduler and KV-cache manager code, mapped onto your mini-vLLM;
-  - vllm-metal vs `mlx_lm.server`, benchmarked for concurrency against TTFT and throughput. vllm-metal is young, so it gets a **1-session timebox**. If it fails, or lacks continuous batching or prefix caching, use the fallback:
+  - vllm-metal vs `mlx_lm.server`, benchmarked for concurrency against TTFT and throughput. **Done 2026-11-12:** a near tie, since mlx-lm 0.32 batches too; vLLM is now the local dev server (EXPERIMENTS 2026-11-12). vllm-metal is young, so it gets a **1-session timebox**. If it fails, or lacks continuous batching or prefix caching, use the fallback:
     - a paper KV / Little's-law model;
     - a toy continuous-batching scheduler simulator;
     - the real vLLM benchmark moves to v13;

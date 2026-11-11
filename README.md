@@ -49,7 +49,7 @@ flowchart LR
     TTS["Kokoro TTS<br/>voice hf_alpha"]
   end
 
-  LLM["mlx_lm.server :8080<br/>Qwen3-4B-Instruct 4-bit<br/>(OpenAI API)"]
+  LLM["vLLM (vllm-metal) :8080<br/>Qwen3-4B-Instruct 4-bit<br/>(OpenAI API)"]
   LF[("Langfuse<br/>(optional)")]
 
   MIC -- "PCM frames" --> WS
@@ -67,7 +67,7 @@ flowchart LR
 1. The browser's AudioWorklet captures the mic, downsamples 48 → 16 kHz and streams PCM over the WebSocket.
 2. Silero VAD hears 500 ms of silence and ends the turn.
 3. Whisper large-v3-turbo transcribes it, with Hindi forced so Hinglish comes back in Devanagari.
-4. `reply(history)` streams tokens from Qwen3-4B through `mlx_lm.server`'s OpenAI-compatible API.
+4. `reply(history)` streams tokens from Qwen3-4B through vLLM's OpenAI-compatible API (the vllm-metal plugin on the Mac GPU).
 5. The chunker cuts a short first chunk (a clause or a few words), then whole sentences. The normaliser turns numbers, ₹ and % into Hindi words.
 6. Kokoro speaks each chunk, and the audio streams back to the browser's scheduled Web Audio player.
 7. If you talk over it, playback stops, the browser reports the bytes it played, and the server trims history to what you heard (`reply_trimmed`).
@@ -78,7 +78,7 @@ flowchart LR
 | Gateway | FastAPI WebSocket, protocol v1 | Token auth in the first message, Origin check, versioned frames, close codes, newest tab wins, bounded upstream queue, `/healthz` + `/readyz`, graceful shutdown |
 | Endpointing | Silero VAD | Small and fast; hands-free turns without a button |
 | STT | Whisper large-v3-turbo (mlx-whisper) | Strong Hindi; turbo decoder keeps ASR around 0.5 s warm |
-| LLM | Qwen3-4B-Instruct-2507, 4-bit, `mlx_lm.server` | Fits a 16 GB Mac; the OpenAI API means the server can be swapped (vLLM later) without touching callers |
+| LLM | Qwen3-4B-Instruct-2507, 4-bit, vLLM (vllm-metal) | Fits a 16 GB Mac; the same engine as on a CUDA GPU. The OpenAI API meant swapping from `mlx_lm.server` touched no callers |
 | TTS | Kokoro-82M (mlx-audio), voice `hf_alpha` | Apache-2.0, fast, has a Hindi voice (picked blind by ear) |
 | Observability | structlog, Langfuse (opt-in) | Structured per-turn logs; traces only when keys are set |
 
@@ -106,7 +106,7 @@ Open **http://127.0.0.1:8000**, paste the token, allow the mic and start talking
 | Target | Does |
 |---|---|
 | `make sync` | Install all workspace members and dev tools |
-| `make llm` | Local model server (MLX, port 8080) |
+| `make llm` | Local model server (vLLM on the Mac GPU, port 8080; one-time `brew install`, see the Makefile). `make llm-mlx` is the fallback |
 | `make serve` | WebSocket gateway + built web UI on :8000 (needs `FRYDAY_ACCESS_TOKEN`) |
 | `make talk` / `make chat` | Terminal voice chat (push-to-talk) / terminal text chat |
 | `make web` | React dev server on :5173 (proxies `/ws` to `make serve`) |
