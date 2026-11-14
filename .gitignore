@@ -12,6 +12,7 @@ htmlcov/
 .DS_Store
 # model weights and datasets (spikes and later phases)
 /data/
+/spikes/learn/out/
 # guard for the phase-0 gitleaks test (planted fake secret)
 leak.txt
 

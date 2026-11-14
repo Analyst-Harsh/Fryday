@@ -35,6 +35,7 @@ flowchart LR
 | 2026-11-10 | (F6 quiz, skipped) (1) Explain `GroupedQueryAttention.forward` without looking: the uneven split, the fold of query heads into rows, and why k/v are never copied. (2) Batched heads, RMSNorm and the GQA fold: which one got faster, which got slower, and what one thing explains all three on MPS? (3) Why does GQA barely matter for training but multiply how many users a server can hold? | due 2026-11-17 | due 2026-12-08 |
 | 2026-11-11 | (v9 learn + B1–B4, no quiz) (1) Explain without looking what happens in one engine step: decode, retire, admit, and why that order. (2) Why did the KV cache cut the work 32× but the time only ~1.2×, and why does paging save nothing for outputs near ctx_len? (3) Two Fryday users share a system prompt: walk through which pages the second one reuses, what its ref counts become, and what happens when memory gets tight. | due 2026-11-18 | due 2026-12-09 |
 | 2026-11-12 | (v9 vllm-metal timebox, quiz skipped) (1) Which bytes does one decode step read, and which of them grow with batch size? Use it to explain why tok/s flattened from 4 → 8 users with 91% of the KV pool free. (2) Two separate limits: what does `--max-model-len` cap, what does the KV pool cap, and why does vLLM say 2.77× concurrency when ~40 Fryday turns fit? (3) What does vLLM do with memory at startup, and how does that differ on a dedicated CUDA GPU vs the Mac's unified memory? | due 2026-11-19 | due 2026-12-10 |
+| 2026-11-14 | (v8 learn 1 ONNX, no quiz) (1) Without looking, name the parts of an ONNX file and say what `dynamic_shapes=({0: batch, 1: seq}, ...)` means, including why the same `Dim` is reused. (2) Why does fusion happen in the runtime (at session load) and not in the exported file? (3) Why did ORT win at batch 1 but lose at batch 32 on the Mac, and why was CoreML 7× slower even though it uses the GPU? | due 2026-11-21 | due 2026-12-12 |
 
 ## Entry template
 ```markdown
@@ -46,6 +47,28 @@ flowchart LR
 - **Still don't get:**
 - **Tomorrow's first step:**
 ```
+
+---
+
+### 2026-11-14: v8 learn 1, the ONNX format (toy on the Mac embedder)
+- **Built or watched:**
+  - Janakiram MSV, *Everything You Want to Know About ONNX*.
+  - `spikes/learn/v8_onnx_parts.py`: a tiny Linear+ReLU model to read every part of an ONNX file (inputs, initializers, nodes, outputs, opset), fixed vs dynamic batch, LayerNorm at opset 16 vs 20. Viewed in Netron.
+  - `spikes/learn/v8_onnx_toy.py`: multilingual-e5-small + pooling exported to ONNX; ORT optimiser diff, parity, CPU speed, CoreML provider. Claude wrote the code; the owner walked through every section.
+  - v9 closed on the KV-pin finding (vllm-metal honours `--kv-cache-memory-bytes` and fails fast); v9 interview still open.
+- **Predicted vs actual:**
+  - ORT vs PyTorch match: approximate → ✅ 1.4e-7.
+  - ORT faster at batch 1 → ✅ 1.76×.
+  - Same at batch 32 → ❌ 0.76×; faster with equal threads → ❌ still 0.76× (my thread theory was wrong too).
+  - LayerNorm at opset 16: ~8 nodes → 11.
+  - Batch 4 into a fixed batch-2 file: not predicted → INVALID_ARGUMENT.
+- **Surprised me:**
+  - PyTorch on the Mac uses Apple Accelerate for big MatMuls, so "ORT is faster" flips with batch size.
+  - CoreML (the Apple GPU / Neural Engine) was 7× slower: it ran half the graph in 88 pieces, and every handoff costs a copy.
+  - The exporter itself can produce an invalid file (the `embedding` name clash).
+- **I can now explain:** AutoTokenizer vs AutoModel and what `from_pretrained` loads; why pooling + the mask live inside the graph; the parts of an ONNX file; dynamic axes and `Dim`; opsets and op decomposition; that export stays portable while each runtime fuses at load time (ORT's `com.microsoft` ops); parity tolerances by precision; execution providers, priority order, fallback and partitions; ORT + TensorRT EP vs a `.plan` engine (same coverage, different failure handling); the TensorRT engine and timing caches; which Triton backend fits an encoder on a GPU.
+- **Still don't get:** no quiz; 3 questions are in the table above.
+- **Tomorrow's first step:** v8 learn 2, Triton concepts (Conceptual Guide part 1): model repository, `config.pbtxt`, dynamic batching. Then the arm64 Triton timebox (S0-1).
 
 ---
 
