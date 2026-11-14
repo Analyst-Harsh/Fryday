@@ -72,7 +72,7 @@ Sessions are about 1.5 h. "L" is learn sessions, "B" is build sessions, and "I" 
 |---|---|---|---|
 | v7a | Evaluation: frozen sets, judge, gate, `models.lock` (lite: LLM sets first; ASR and refusal sets before v6) | 2+3+1 (+2 later) | `make eval` prints a score table |
 | v7b | Observability + operations: Langfuse, SLOs, backups, supply chain | 2+5+1 | Traces visible; an injected alert fires |
-| v8 | Model serving: ONNX → Triton, including an LLM on Triton | 2+8+1 | The app runs with models behind Triton (or ORT); tokens stream from Triton |
+| v8 | Model serving: ONNX → Triton, including an LLM on Triton and Triton deep (2026-11-14) | 2+11+1 | The app runs with models behind Triton (or ORT); tokens stream from Triton |
 | v9 | LLM serving internals + vLLM, including your mini-vLLM | 3+7+1 | Your mini-vLLM's tokens per step and utilisation, static vs continuous batching |
 | v10 | Quantisation | 2+4+1 | Quality, size and speed table |
 | v11 | Fine-tuning I: data + LoRA + DPO on the Mac | 3+9+1 | Before/after on the eval |
@@ -425,6 +425,7 @@ Each version lists what you **learn** (interview topics), what you **build**, th
   - gRPC streaming and cancellation;
   - warm-up and readiness;
   - request priority with batching: Triton `priority_levels` and queue policies (timeouts, max queue size), and why voice wants earliest-deadline-first (deadline = when the user's playback buffer runs dry; first chunks have none). Added 2026-10-20 from the v3 design question.
+  - **Triton deep (added 2026-11-14, owner's request):** sequence batching for stateful models (direct vs oldest strategy, correlation IDs, start/end flags, implicit state); model control modes (`none`, `poll`, `explicit` load/unload), version policies and hot reload; dynamic batching knobs (`preferred_batch_size`, `max_queue_delay_microseconds`) and Triton's metrics (queue vs compute time); binary gRPC vs HTTP/JSON and system shared memory; ORT backend settings in `config.pbtxt` (`optimization.graph.level`, `intra_op_thread_count`).
 - **Build:**
   - Arm64 CPU Triton (S0-1) gets a **1-session timebox**; if it fails, ORT goes behind the same contract.
   - **An LLM on Triton (added 2026-10-24):** Qwen3-0.6B only (1.7B won't fit the 4 GB Docker cap), loaded on its own, in a Python backend in **decoupled mode**, so tokens stream over gRPC. Measure TTFT against `mlx_lm.server` (labelled CPU vs Metal, not like-for-like), and compare what Triton gives you (batching, metrics, ensembles) with what your v9 mini-vLLM does (KV cache, scheduling).
@@ -440,6 +441,11 @@ Each version lists what you **learn** (interview topics), what you **build**, th
   - Try TTS with `priority_levels: 2` (first chunk high, later chunks low) and compare first-audio p95 against FIFO under a small concurrent load.
   - Note in the gaps register that dynamic batching on CPU won't show GPU batching behaviour; that is revisited in v14.
   - Nemotron streaming ASR as a stretch.
+  - **Triton deep builds (added 2026-11-14, ~3 sessions, all on the Mac CPU):**
+    - a **stateful model with sequence batching**: a small streaming model (a running-state toy first, then streaming ASR or VAD if one fits) where each audio stream keeps its state across requests by correlation ID;
+    - **model control + versioning**: `explicit` mode, load/unload over the API, two versions of e5 (`1/` plain, `2/` with ORT's transformer optimiser: fused attention), `version_policy` to serve one or both, a hot swap with no failed requests, rollback;
+    - **batching tuning from metrics**: `perf_analyzer` sweeps of concurrency × `max_queue_delay_microseconds` × `preferred_batch_size` on e5, read against Triton's `/metrics` (queue time vs compute time) to find where latency goes;
+    - **transport**: the same e5 request over HTTP/JSON vs gRPC binary vs system shared memory; latency per transport.
 - **Source:** old phases 2 and 7, HLD §10.
 
 ### v9: LLM serving internals + vLLM
@@ -554,6 +560,7 @@ Each version lists what you **learn** (interview topics), what you **build**, th
   - Triton dynamic batching measured on the GPU;
   - E7 stretch (one Triton vs separate servers);
   - E8 (Triton vLLM backend vs standalone);
+  - **Triton deep stretch (added 2026-11-14):** the response cache on e5 (hit latency, when caching is safe); the rate limiter with several models sharing one GPU (resources and priorities); CUDA shared memory between client and server.
   - **Triton + TensorRT-LLM backend (added 2026-10-24, stretch, 2 h timebox, image cached on a persistent disk):** build an engine for the same small Qwen, serve it with inflight batching, and compare it with the vLLM backend on TTFT, tokens/s and memory in one table;
   - an annotated Nsight timeline;
   - Mac-vs-GPU divergence;
@@ -585,7 +592,7 @@ Depth: **B** = built, **M** = measured in an experiment, **C** = concept only, w
 | LLM hosting | runtimes vs servers, formats, OpenAI API, streaming, memory math, TTFT/TPOT | F, v0, v9 | B, M |
 | vLLM | PagedAttention, continuous batching, chunked prefill, prefix cache, multi-LoRA, vllm-metal → CUDA | v9, v13, v14, v15 | B, M (E8, E9) |
 | LLM serving advanced | goodput, Little's law, speculative decoding, FlashAttention, disaggregation, KV offload, tensor/pipeline parallelism | v9, v12, v14 | M for goodput and the spec-decoding stretch; the rest is C (parallelism is C because there is one GPU) |
-| Triton | model repo, `config.pbtxt`, ONNX and Python backends, dynamic batching, instance groups, ensembles, gRPC, metrics, vLLM backend | v8, v14 | B, M (E7 stretch, E8) |
+| Triton | model repo, `config.pbtxt`, ONNX and Python backends, dynamic batching (+ tuning), instance groups, ensembles, gRPC + shared memory, metrics, sequence batching, model control + versioning, vLLM backend; response cache + rate limiter (stretch) | v8, v14 | B, M (E7 stretch, E8) |
 | ONNX | export, opsets, parity, ORT providers, int8 | v2, v8, v10 | B |
 | Quantisation | formats, scale and zero-point, granularity, PTQ/QAT, AWQ, GPTQ, GGUF, MLX, KV quantisation, INT8 calibration; distillation and pruning | v0, v10, v13, v14 | B, M (E2, E3); distillation is C |
 | TensorRT | engines, precision, INT8 calibration, timing cache, plugins, dynamic shapes, fusion, TRT-LLM | v14 | B, M (E4, E5 stretch) |

@@ -50,6 +50,26 @@ flowchart LR
 
 ---
 
+### 2026-11-14: v8 learn 2, Triton concepts + S0-1 (Triton on the Mac CPU)
+- **Built or watched:**
+  - Triton Conceptual Guide part 1 (written guide; no clearly great video found).
+  - Pulled `tritonserver:26.10-py3` (arm64); `infra/triton/model_repository/e5/` with `config.pbtxt` and the e5 `model.onnx`; `spikes/learn/v8_triton_check.py` (health + KServe v2 request + parity vs ORT).
+  - **`config.pbtxt` was written by Claude at the owner's request** (it's on the learner-writes list). The owner then went through every field: INT64 types, `dims` without the batch dimension, `-1`, instances.
+  - Roadmap: a "Triton deep" block added to v8 (sequence batching, model control + versioning, batching tuning from metrics, transport) and v14 stretch items (response cache, rate limiter, CUDA shared memory).
+- **Predicted vs actual:**
+  - Triton image runs on the Mac → ✅ native arm64, e5 READY on the first load, parity 8.9e-8.
+  - The other two predictions (first-try load, closeness to ORT) weren't given.
+- **Surprised me:**
+  - The NVIDIA image runs fine without a GPU: CUDA errors in the log, but the CPU backends work.
+  - Triton can auto-generate an ONNX model's config.
+  - The ORT backend already optimises at load, so the saved `.opt.onnx` isn't what you deploy.
+  - Graph level numbering in Triton: `2` means *off*.
+- **I can now explain:** Triton's model repository and versions; `config.pbtxt` fields (backend, `max_batch_size`, `dims`, `-1`, data types matching the model exactly); dynamic batching (merges whole requests with the same non-batch shape) vs vLLM's continuous batching; instance groups (concurrency vs memory, CPU thread oversubscription); KServe v2 health and infer endpoints; auto-complete config; ORT backend settings (`optimization.graph.level`, thread counts, the TensorRT accelerator + engine cache); why the portable `.onnx` is what you ship.
+- **Still don't get:** no quiz this session; the ONNX re-asks are in the table above.
+- **Tomorrow's first step:** the tokenizer ensemble (Python backend → e5, text in, vector out), then perf_analyzer + batching tuning.
+
+---
+
 ### 2026-11-14: v8 learn 1, the ONNX format (toy on the Mac embedder)
 - **Built or watched:**
   - Janakiram MSV, *Everything You Want to Know About ONNX*.

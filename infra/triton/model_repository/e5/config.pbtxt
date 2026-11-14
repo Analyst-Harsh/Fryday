@@ -1,0 +1,41 @@
+# multilingual-e5-small sentence embedder (BERT + mean pooling + L2 norm in the graph).
+# model.onnx comes from spikes/learn/v8_onnx_toy.py (opset 20, dynamic batch and seq).
+name: "e5"
+backend: "onnxruntime"
+
+# Triton owns the batch dimension: it is left out of every `dims` below.
+max_batch_size: 32
+
+input [
+  {
+    name: "input_ids"
+    data_type: TYPE_INT64
+    dims: [ -1 ]  # seq: any length (the model's limit is 512)
+  },
+  {
+    name: "attention_mask"
+    data_type: TYPE_INT64
+    dims: [ -1 ]
+  }
+]
+
+output [
+  {
+    name: "sentence_embedding"
+    data_type: TYPE_FP32
+    dims: [ 384 ]
+  }
+]
+
+# Merge requests that arrive within 0.5 ms into one ORT call.
+dynamic_batching {
+  max_queue_delay_microseconds: 500
+}
+
+# One copy of the model on the CPU (Docker on the Mac has no GPU).
+instance_group [
+  {
+    count: 1
+    kind: KIND_CPU
+  }
+]

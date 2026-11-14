@@ -12,6 +12,16 @@ Every result goes here, **including negative ones** (roadmap working principles)
 - **Decision:** what changes because of this (HLD/roadmap update, next step).
 ```
 
+## 2026-11-14: S0-1, Triton on arm64 CPU (Mac, Docker) serving the e5 ONNX model (v8)
+- **Question:** does NVIDIA's Triton image run on Apple Silicon under Docker (no GPU), and does it serve our ONNX embedder correctly? (Spike S0-1; if not, ORT goes behind the same contract and LLM-on-Triton moves to v14.)
+- **Setup:** `nvcr.io/nvidia/tritonserver:26.10-py3` (Triton 2.74.0; multi-arch, arm64 = 10.4 GB compressed, 28.1 GB on disk). Docker 29.4, VM 7.8 GB / 10 CPUs (not yet capped to 4 GB). `infra/triton/model_repository/e5/` = `config.pbtxt` (ONNX Runtime backend, `max_batch_size: 32`, INT64 inputs `dims: [-1]`, FP32 output `dims: [384]`, dynamic batching 500 µs, 1 CPU instance) + `1/model.onnx` (the 2026-11-14 export). HTTP mapped to :8010. Check: `spikes/learn/v8_triton_check.py` (health, one KServe v2 JSON request with 4 mixed-length sentences, parity vs local ORT).
+- **Result:**
+  - **PASS.** The arm64 image runs natively (no emulation). The log warns "NVIDIA Driver was not detected", disables the CUDA memory pool and pinned memory, and logs `E… CudaDriverHelper has not been initialized`; none of it blocks the CPU backends. `e5 | 1 | READY` on the first load.
+  - **Parity, Triton vs local ORT:** max |diff| **8.9e-8**, min cosine 1.000000.
+  - One request: **50 ms** over HTTP/JSON (vs ~2–5 ms for ORT itself); not a benchmark, mostly JSON encoding and a first-call warm-up.
+  - Triton runs with `auto-complete-config: true`, so an ONNX model can load without a config; ours is written explicitly as a reviewed contract. With no `optimization` block, the ORT backend applies all graph optimisations, so serving the plain `.onnx` already gets the fused graph.
+- **Decision:** S0-1 passes. Triton stays the v8 serving path on the Mac CPU, and LLM-on-Triton (Qwen3-0.6B, decoupled) stays in v8. The model repository holds the portable `.onnx`, not ORT's saved optimised graph (ORT-only ops, tied to ORT version and CPU). Next: the tokenizer ensemble, then perf_analyzer.
+
 ## 2026-11-14: ONNX export of the Mac embedder: parity, CPU speed, CoreML provider (v8 learn 1)
 - **Question:** does `multilingual-e5-small` export cleanly to ONNX, does ONNX Runtime match PyTorch, and is it faster on the Mac?
 - **Setup:** MacBook (10 cores), macOS 27. `intfloat/multilingual-e5-small` (BertModel + XLM-R tokenizer) wrapped with mean pooling + L2 norm, exported with torch 2.14.1 (`dynamo=True`, opset 20, dynamic `batch` and `seq`). onnxruntime 1.32.0. `spikes/learn/v8_onnx_toy.py`; median of 20 runs after 3 warm-ups; tokenization not timed. `spikes/learn/v8_onnx_parts.py` covers the file's parts on a tiny model (fixed vs dynamic batch, LayerNorm at opset 16 = 11 nodes vs opset 20 = 1).
