@@ -12,6 +12,25 @@ Every result goes here, **including negative ones** (roadmap working principles)
 - **Decision:** what changes because of this (HLD/roadmap update, next step).
 ```
 
+## 2026-11-14: ONNX export of the Mac embedder: parity, CPU speed, CoreML provider (v8 learn 1)
+- **Question:** does `multilingual-e5-small` export cleanly to ONNX, does ONNX Runtime match PyTorch, and is it faster on the Mac?
+- **Setup:** MacBook (10 cores), macOS 27. `intfloat/multilingual-e5-small` (BertModel + XLM-R tokenizer) wrapped with mean pooling + L2 norm, exported with torch 2.14.1 (`dynamo=True`, opset 20, dynamic `batch` and `seq`). onnxruntime 1.32.0. `spikes/learn/v8_onnx_toy.py`; median of 20 runs after 3 warm-ups; tokenization not timed. `spikes/learn/v8_onnx_parts.py` covers the file's parts on a tiny model (fixed vs dynamic batch, LayerNorm at opset 16 = 11 nodes vs opset 20 = 1).
+- **Result:**
+  - **Export:** 472 MB (fp32 weights inside), 552 nodes. The first try failed in ORT: output named `embedding` collided with an internal tensor ("Duplicate definition of name"); renamed `sentence_embedding`.
+  - **ORT graph optimiser** (at session load): 552 → 480 nodes. 24 `SkipLayerNormalization` (residual Add + LayerNorm), 12 `BiasGelu`, 12 `FusedMatMul` (attention scale folded in), all `com.microsoft` ops. No fused attention without ORT's transformer optimiser.
+  - **Parity, ORT CPU vs PyTorch** (batch 4, mixed lengths, not seen at trace time): max |diff| **1.4e-7**, min cosine 0.99999988.
+  - **Speed, CPU, 4 threads each:**
+
+    | Batch | PyTorch | ORT CPU | Ratio |
+    |---|---|---|---|
+    | 1 | 3.8 ms | 2.2 ms | **1.76×** |
+    | 32 | 26.0 ms | 34.2 ms | **0.76×** |
+
+    The first run had ORT on all 10 cores: 1.54× / 0.76×. So the thread count was **not** the cause at batch 32 (that guess was wrong). Likely cause: PyTorch's build uses Apple Accelerate (`BLAS_INFO=accelerate`, AMX) for big MatMuls, while ORT's CPU provider uses its own MLAS kernels. At batch 1 per-op overhead dominates and ORT wins. Not profiled.
+  - **CoreML provider:** `MLProgram` format **crashed** at session load ("axis 2 is not in valid range [-2,1]"). `NeuralNetwork` format ran **252 of 564 nodes in 88 partitions**: batch 1 **15.3 ms (7.3× slower than ORT CPU)**, batch 32 69.0 ms (1.8× slower), max |diff| 1.1e-4 (fp16). Static-shapes-only: 78 nodes in 13 partitions.
+  - **Predictions:** approximate match ✅, ORT faster at batch 1 ✅, same at batch 32 ❌, faster at 32 with equal threads ❌.
+- **Decision:** on the Mac, ONNX + ORT CPU for the embedder: it wins Fryday's real case (batch 1) with a small, Python-free runtime. CoreML isn't worth pursuing for this model. The export is the input for v8 (Triton ONNX backend), v10 (int8) and v14 (TensorRT fp16 on the GPU, E4). Mac speed results don't carry over to production GPUs.
+
 ## 2026-11-12: vllm-metal vs mlx_lm.server under concurrent users (v9 timebox)
 - **Question:** does vLLM on the Mac GPU (vllm-metal) beat `mlx_lm.server` for Fryday's model as concurrent users grow, and what does vLLM's own view (KV use, pre-emption, prefix cache, memory) look like?
 - **Setup:** MacBook, 16 GB unified memory (17.2 GB reported), macOS 27.0.1. `mlx-community/Qwen3-4B-Instruct-2507-4bit` on both. vllm-metal 0.33.0 (Homebrew; vLLM 0.33.0, torch 2.16 nightly), `--max-model-len 4096`, default `gpu_memory_utilization` 0.92. mlx-lm 0.32.2, default flags. `spikes/learn/v9_engine_bench.py` (base commit `212afa7`): N users fire one voice turn each at once (Fryday's voice system prompt + one Devanagari question, Fryday's sampling settings, streaming), 3 rounds per N, one warm-up. One server at a time on :8080.
@@ -39,7 +58,8 @@ Every result goes here, **including negative ones** (roadmap working principles)
 
     Predicted peak KV at 8 users: 15%; actual **8.9%**. The system prompt's pages are shared, so each extra user adds ~1%, not 2.3%. Throughput flattens from 4 → 8 users with 91% of the pool free, so memory isn't the limit (likely compute on 4-bit dequant, per-step overhead and straggler replies at the end of each round).
   - **Engine memory:** macOS `footprint` 3,693 MB now, **4,052 MB peak** (2,935 MB of it `IOAccelerator (graphics)`: weights + KV). `ps` RSS shows only 709 MB: it misses Metal buffers.
-- **Decision:** at Fryday's load (1–8 short turns), vLLM's paging and pre-emption never engage, so the speed is the same. The owner chose **vLLM for local development** anyway, to learn the production engine: `make llm` now runs `vllm serve … --max-model-len 4096`, with `make llm-mlx` as the fallback. The head-to-head under memory pressure stays in v13 on a CUDA GPU. Open: does vllm-metal honour `--kv-cache-memory-bytes` (a fixed pool every start)?
+- **Decision:** at Fryday's load (1–8 short turns), vLLM's paging and pre-emption never engage, so the speed is the same. The owner chose **vLLM for local development** anyway, to learn the production engine: `make llm` now runs `vllm serve … --max-model-len 4096`, with `make llm-mlx` as the fallback. The head-to-head under memory pressure stays in v13 on a CUDA GPU.
+- **Follow-up, same day: does vllm-metal honour `--kv-cache-memory-bytes`?** Yes, and it fails fast. `1536M` (1.5 GiB; `1.5G` is rejected: no decimals with binary suffixes) replaced the automatic sizing, but with 3.7 GB free the commit probe saw memory compression and the engine **refused to start** ("Refusing to silently shrink an explicit budget"). So the automatic size shrinks to fit (Mac behaviour), and a pinned size gives exactly that or a startup error (CUDA behaviour). `make llm` stays unpinned for now (owner's call); pin `1024M` if benchmarks need the same pool every run.
 
 ## 2026-10-25: Real mic in the browser: server latency vs what the user hears (v5 leftover, hero video)
 - **Question:** what does a real person on a real mic get, and how does the server's number compare with the gap a listener actually hears?
