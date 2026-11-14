@@ -1,4 +1,4 @@
-.PHONY: sync test lint up down db-check llm llm-mlx chat talk serve web web-build web-test
+.PHONY: sync test lint up down triton triton-down triton-logs db-check llm llm-mlx chat talk serve web web-build web-test
 
 sync:
 	uv sync --all-packages
@@ -16,6 +16,16 @@ up:
 
 down:
 	docker compose --profile core down
+
+# Triton on :8010 (HTTP), :8001 (gRPC), :8002 (metrics); waits until models are ready.
+triton:
+	docker compose --profile triton up -d --wait triton
+
+triton-down:
+	docker compose --profile triton down
+
+triton-logs:
+	docker compose --profile triton logs -f triton
 
 db-check:
 	docker compose exec -T postgres sh -c 'psql -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" -tAc "select extversion from pg_extension where extname='\''vector'\''"' | grep .
