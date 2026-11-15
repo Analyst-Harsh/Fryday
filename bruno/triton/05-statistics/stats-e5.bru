@@ -1,0 +1,20 @@
+meta {
+  name: Statistics (e5)
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/v2/models/e5/stats
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 200
+}
+
+docs {
+  e5 only. queue ns / count = average wait in the dynamic batcher (up to the 500 µs delay);
+  compute_infer ns / count = average ORT time per call.
+}

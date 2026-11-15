@@ -1,0 +1,21 @@
+meta {
+  name: Model metadata (e5)
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/v2/models/e5
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 200
+  res.body.name: eq e5
+}
+
+docs {
+  The model's **contract**: input/output names, datatypes and shapes (-1 = dynamic). This is
+  what a client needs to build a request.
+}

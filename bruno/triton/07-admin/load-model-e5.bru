@@ -1,0 +1,21 @@
+meta {
+  name: Load model (e5) — explicit mode only
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/v2/repository/models/e5/load
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: neq 200
+}
+
+docs {
+  Load or reload a model on command. **Expected to FAIL now**: the server runs in model
+  control mode NONE (load everything at start, no changes), so Triton refuses with an error.
+  It works once we start Triton with `--model-control-mode=explicit` (versioning build).
+}

@@ -33,9 +33,9 @@ services:
   # once the app calls it. Docker on the Mac has no GPU: CPU backends only.
   triton:
     profiles: ["triton"]
-    # 26.10-py3 pinned by digest (multi-arch: amd64 + arm64). To bump:
-    #   docker buildx imagetools inspect nvcr.io/nvidia/tritonserver:<yy.mm>-py3
-    image: nvcr.io/nvidia/tritonserver:26.10-py3@sha256:b404f7de5dbeeefe0b17d7d149745a50d0989a25d0d831433b5ba63c716c2fcd
+    # The stock image + Python-backend deps; the base digest is pinned in the Dockerfile.
+    build: ./infra/triton
+    image: fryday-triton:26.10
     command: ["tritonserver", "--model-repository=/models"]
     ports: # localhost only (HLD §7); host 8000 is the Fryday gateway
       - "127.0.0.1:${TRITON_HTTP_PORT:-8010}:8000"

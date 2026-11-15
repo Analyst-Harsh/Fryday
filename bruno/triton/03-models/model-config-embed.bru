@@ -1,0 +1,19 @@
+meta {
+  name: Model config (embed)
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/v2/models/embed/config
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 200
+}
+
+docs {
+  The ensemble's effective config, including `ensemble_scheduling` (the step wiring).
+}

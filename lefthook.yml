@@ -13,7 +13,9 @@ pre-commit:
       stage_fixed: true
     pyright:
       glob: "*.py"
-      exclude: ["spikes/**"]  # throwaway code, mirrors pyproject excludes
+      # spikes: throwaway code. infra: Triton model code imports triton_python_backend_utils,
+      # which only exists inside the container. Mirrors pyproject (pyright include = app).
+      exclude: ["spikes/**", "infra/**"]
       run: uv run pyright {staged_files}
     # Needs gitleaks >= 8.19 on PATH (brew install gitleaks). GUI git clients
     # may not have /opt/homebrew/bin on PATH -- commit from the terminal.

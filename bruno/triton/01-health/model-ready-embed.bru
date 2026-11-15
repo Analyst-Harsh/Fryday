@@ -1,0 +1,20 @@
+meta {
+  name: Model ready (embed)
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/v2/models/embed/ready
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 200
+}
+
+docs {
+  Is one model ready? Use per-model checks in explicit model-control mode, where server
+  readiness only covers models that are loaded.
+}

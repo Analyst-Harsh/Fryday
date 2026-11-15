@@ -1,0 +1,20 @@
+meta {
+  name: Trace settings
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/v2/trace/setting
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 200
+}
+
+docs {
+  Request tracing: per-request timestamps for every stage (queue, compute, each ensemble
+  step). Off by default; POST to enable with a sample rate. Output goes to a trace file.
+}

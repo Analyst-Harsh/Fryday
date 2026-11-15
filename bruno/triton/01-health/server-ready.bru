@@ -1,0 +1,21 @@
+meta {
+  name: Server ready
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/v2/health/ready
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 200
+}
+
+docs {
+  Can the server take inference requests? With strict readiness (default), 200 only when
+  **every** loaded model is READY. Our compose healthcheck and the Kubernetes **readiness**
+  probe use this (fail → stop sending traffic, don't restart).
+}

@@ -1,0 +1,22 @@
+meta {
+  name: Prometheus metrics
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{metricsUrl}}/metrics
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 200
+}
+
+docs {
+  The same kind of numbers as Statistics, in Prometheus text format, for scraping into
+  dashboards and alerts (nv_inference_request_success, nv_inference_queue_duration_us,
+  nv_inference_compute_infer_duration_us, CPU/memory...). Counters only go up; Prometheus
+  computes rates. Port 8002, not 8010.
+}

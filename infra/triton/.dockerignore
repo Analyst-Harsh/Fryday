@@ -1,0 +1,2 @@
+# Models are mounted at run time, not baked into the image.
+model_repository/

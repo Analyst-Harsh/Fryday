@@ -12,6 +12,25 @@ Every result goes here, **including negative ones** (roadmap working principles)
 - **Decision:** what changes because of this (HLD/roadmap update, next step).
 ```
 
+## 2026-11-15: Text-in embeddings on Triton: tokenizer (Python backend) + e5 ensemble (v8)
+- **Question:** can Triton take plain text and return e5 embeddings (tokenizer → e5 ensemble), does it match local tokenizer + ORT, and what does the extra step cost?
+- **Setup:** `fryday-triton:26.10` = the digest-pinned `tritonserver:26.10-py3` + `tokenizers==0.23.3` (`infra/triton/Dockerfile`). Models: `tokenizer` (Python backend, `1/model.py` + e5's `tokenizer.json`, padding `<pad>`=1, truncation 512, no dynamic batching), `e5` (unchanged), `embed` (ensemble, `ids`/`mask` as internal tensors). Mac CPU, Docker 4 GB limit. Check: `spikes/learn/v8_triton_check.py`. API collection: `bruno/triton/` (19 requests, 23 assertions, all pass with `npx @usebruno/cli run --env Local`).
+- **Result:**
+  - **Tokenizer parity:** the plain `tokenizers` library with `tokenizer.json` + padding + truncation gives the same ids and mask as HF `AutoTokenizer` (including a 600-word input cut to 512). Through Triton: equal to HF for both outputs.
+  - **Ensemble parity** vs local tokenizer + ORT: max |diff| **8.9e-8**, cosine 1.000000.
+  - **Latency, 1 sentence, HTTP/JSON, median of 30:** client tokenizes + `e5` 6.6 / 6.8 ms vs `embed` 6.0 / 7.8 ms across two runs, so the order flipped between runs: **the same within noise**.
+  - **Per-step statistics** (`/v2/models/stats`, clean restart, 30 single-sentence `embed` requests, average µs):
+
+    | Model | queue | compute_input | compute_infer | compute_output |
+    |---|---|---|---|---|
+    | embed | 1 | 33 | 5,304 | 51 |
+    | tokenizer | 97 | 21 | **966** | 35 |
+    | e5 | **1,114** | 12 | 4,338 | 17 |
+
+    Tokenizing itself takes 6 µs (1 sentence) to 232 µs (32) locally, so the tokenizer's ~1 ms is **Python backend overhead** (IPC with the stub process). e5's ~1.1 ms queue is the **dynamic batcher's 500 µs delay** waiting for requests that never come (sequential load). e5's compute is ~4.3 ms vs ~2.2 ms in local ORT with 4 threads (Triton's default ORT threads; not tuned).
+  - **Error path:** invalid UTF-8, sent with the binary data extension (JSON can't carry it), returned `500 in ensemble 'embed', tokenizer: 'utf-8' codec can't decode…`; after typing the error `INVALID_ARG` it returns **400**. The server kept serving: the next request matched.
+- **Decision:** keep the ensemble for Fryday (one pinned tokenizer, thin client, same latency). Queued for the perf_analyzer step: `max_queue_delay_microseconds` (0 vs 500 at low load), `intra_op_thread_count`, and the owner's padding idea (per-request vs `pad_to_multiple_of` / length buckets so e5 can merge concurrent requests). At high traffic the Python tokenizer's ~1 ms and server CPU would argue for a native or in-graph tokenizer (production gap #43).
+
 ## 2026-11-14: S0-1, Triton on arm64 CPU (Mac, Docker) serving the e5 ONNX model (v8)
 - **Question:** does NVIDIA's Triton image run on Apple Silicon under Docker (no GPU), and does it serve our ONNX embedder correctly? (Spike S0-1; if not, ORT goes behind the same contract and LLM-on-Triton moves to v14.)
 - **Setup:** `nvcr.io/nvidia/tritonserver:26.10-py3` (Triton 2.74.0; multi-arch, arm64 = 10.4 GB compressed, 28.1 GB on disk). Docker 29.4, VM 7.8 GB / 10 CPUs (not yet capped to 4 GB). `infra/triton/model_repository/e5/` = `config.pbtxt` (ONNX Runtime backend, `max_batch_size: 32`, INT64 inputs `dims: [-1]`, FP32 output `dims: [384]`, dynamic batching 500 µs, 1 CPU instance) + `1/model.onnx` (the 2026-11-14 export). HTTP mapped to :8010. Check: `spikes/learn/v8_triton_check.py` (health, one KServe v2 JSON request with 4 mixed-length sentences, parity vs local ORT).
