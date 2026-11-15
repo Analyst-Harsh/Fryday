@@ -1,0 +1,20 @@
+meta {
+  name: Statistics (embed ensemble)
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/v2/models/embed/stats
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 200
+}
+
+docs {
+  The ensemble's own numbers: end-to-end per request across both steps.
+  Compare with the tokenizer and e5 numbers to see which step costs what.
+}

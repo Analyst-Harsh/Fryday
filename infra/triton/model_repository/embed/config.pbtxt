@@ -1,0 +1,45 @@
+# Text in, embedding out: tokenizer (Python) → e5 (ONNX). Wiring only, no code;
+# Triton runs the steps and passes tensors between them by name.
+# The empty 1/ folder is required: an ensemble is a model, so it needs a version.
+name: "embed"
+platform: "ensemble"
+
+# Can't exceed any step's max_batch_size (both are 32).
+max_batch_size: 32
+
+input [
+  {
+    name: "TEXT"
+    data_type: TYPE_STRING
+    dims: [ 1 ]
+  }
+]
+
+output [
+  {
+    name: "sentence_embedding"
+    data_type: TYPE_FP32
+    dims: [ 384 ]
+  }
+]
+
+# In each map: key = the step model's tensor name, value = the ensemble's tensor name.
+# A value that one step outputs and another inputs is an internal tensor (never returned).
+ensemble_scheduling {
+  step [
+    {
+      model_name: "tokenizer"
+      model_version: -1  # latest
+      input_map { key: "TEXT" value: "TEXT" }
+      output_map { key: "input_ids" value: "ids" }
+      output_map { key: "attention_mask" value: "mask" }
+    },
+    {
+      model_name: "e5"
+      model_version: -1
+      input_map { key: "input_ids" value: "ids" }
+      input_map { key: "attention_mask" value: "mask" }
+      output_map { key: "sentence_embedding" value: "sentence_embedding" }
+    }
+  ]
+}

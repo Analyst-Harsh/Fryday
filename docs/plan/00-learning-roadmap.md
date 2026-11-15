@@ -443,7 +443,7 @@ Each version lists what you **learn** (interview topics), what you **build**, th
   - Nemotron streaming ASR as a stretch.
   - **Triton deep builds (added 2026-11-14, ~3 sessions, all on the Mac CPU):**
     - a **stateful model with sequence batching**: a small streaming model (a running-state toy first, then streaming ASR or VAD if one fits) where each audio stream keeps its state across requests by correlation ID;
-    - **model control + versioning**: `explicit` mode, load/unload over the API, two versions of e5 (`1/` plain, `2/` with ORT's transformer optimiser: fused attention), `version_policy` to serve one or both, a hot swap with no failed requests, rollback;
+    - **model control + versioning**: `explicit` mode, starting with only the chosen models (`--load-model=embed`, which also loads its steps; check that the rest stay unloaded and that `/v2/health/ready` only covers loaded models), load/unload over the API, two versions of e5 (`1/` plain, `2/` with ORT's transformer optimiser: fused attention), `version_policy` to serve one or both, a hot swap with no failed requests, rollback;
     - **batching tuning from metrics**: `perf_analyzer` sweeps of concurrency × `max_queue_delay_microseconds` × `preferred_batch_size` on e5, read against Triton's `/metrics` (queue time vs compute time) to find where latency goes;
     - **transport**: the same e5 request over HTTP/JSON vs gRPC binary vs system shared memory; latency per transport.
 - **Source:** old phases 2 and 7, HLD §10.

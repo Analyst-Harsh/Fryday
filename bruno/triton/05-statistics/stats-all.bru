@@ -1,0 +1,23 @@
+meta {
+  name: Statistics (all models)
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/v2/models/stats
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 200
+}
+
+docs {
+  Per model and version, cumulative since start:
+  - `inference_count` (rows) vs `execution_count` (model calls) → average batch size
+  - `inference_stats`: `queue` (waiting), `compute_input`, `compute_infer`, `compute_output`
+    → each with `count` and total `ns`; divide ns by count for the average.
+  - `batch_stats`: how many calls ran at each batch size (shows dynamic batching working).
+}

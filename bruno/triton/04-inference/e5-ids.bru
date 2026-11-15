@@ -1,0 +1,62 @@
+meta {
+  name: e5: ids + mask → embedding
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/v2/models/e5/infer
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "inputs": [
+      {
+        "name": "input_ids",
+        "shape": [
+          1,
+          7
+        ],
+        "datatype": "INT64",
+        "data": [
+          0,
+          41,
+          1294,
+          12,
+          1274,
+          2685,
+          2
+        ]
+      },
+      {
+        "name": "attention_mask",
+        "shape": [
+          1,
+          7
+        ],
+        "datatype": "INT64",
+        "data": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    ]
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.outputs[0].shape[1]: eq 384
+}
+
+docs {
+  Step 2 on its own: the caller must tokenize. These are the real ids for
+  "query: hi there" (<s> ▁que ry : ▁hi ▁there </s>). shape [1, 7] = 1 row, 7 tokens.
+}

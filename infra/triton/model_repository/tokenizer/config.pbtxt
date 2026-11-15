@@ -1,0 +1,38 @@
+# e5's tokenizer as a Python-backend model: text → input_ids + attention_mask.
+# Code in 1/model.py; 1/tokenizer.json is copied from the HF cache (not in git).
+name: "tokenizer"
+backend: "python"
+
+# Same batch limit as e5, so shapes line up in the ensemble.
+max_batch_size: 32
+
+input [
+  {
+    name: "TEXT"
+    data_type: TYPE_STRING  # arrives in model.py as numpy bytes objects
+    dims: [ 1 ]             # one string per row
+  }
+]
+
+output [
+  {
+    name: "input_ids"
+    data_type: TYPE_INT64
+    dims: [ -1 ]  # seq: the longest sentence in this request (max 512)
+  },
+  {
+    name: "attention_mask"
+    data_type: TYPE_INT64
+    dims: [ -1 ]
+  }
+]
+
+# No dynamic_batching block: tokenizing takes microseconds, so requests go straight
+# through one at a time (default scheduler). Batching happens at e5, where it pays off.
+
+instance_group [
+  {
+    count: 1
+    kind: KIND_CPU
+  }
+]

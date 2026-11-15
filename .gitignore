@@ -13,8 +13,11 @@ htmlcov/
 # model weights and datasets (spikes and later phases)
 /data/
 /spikes/learn/out/
-# exported models in the Triton repo (re-create with spikes/learn/v8_onnx_toy.py)
-/infra/triton/model_repository/*/*/model.onnx
+# model files in the Triton repo; only code (.py) in version folders is tracked.
+# Re-create: model.onnx via spikes/learn/v8_onnx_toy.py, tokenizer.json from the HF cache.
+/infra/triton/model_repository/*/*/*
+!/infra/triton/model_repository/*/*/*.py
+!/infra/triton/model_repository/*/*/.gitkeep
 # guard for the phase-0 gitleaks test (planted fake secret)
 leak.txt
 

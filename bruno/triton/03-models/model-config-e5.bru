@@ -1,0 +1,21 @@
+meta {
+  name: Model config (e5)
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/v2/models/e5/config
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 200
+}
+
+docs {
+  The **full effective config** Triton is using: our config.pbtxt plus every default and
+  auto-completed field (scheduler, optimization, instance placement...). Compare it with
+  infra/triton/model_repository/e5/config.pbtxt to see what Triton filled in.
+}

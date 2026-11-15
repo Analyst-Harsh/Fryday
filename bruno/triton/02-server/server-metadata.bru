@@ -1,0 +1,21 @@
+meta {
+  name: Server metadata
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/v2
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 200
+  res.body.name: eq triton
+}
+
+docs {
+  Server name, version and the **extensions** it supports (model_repository, statistics,
+  trace, logging, shared memory...). A client can check features before using them.
+}

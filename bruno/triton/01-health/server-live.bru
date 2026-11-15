@@ -1,0 +1,20 @@
+meta {
+  name: Server live
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/v2/health/live
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 200
+}
+
+docs {
+  Is the Triton **process** alive? 200 even if models failed to load.
+  Kubernetes uses this for the **liveness** probe (fail → restart the pod).
+}

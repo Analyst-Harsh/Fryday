@@ -50,6 +50,25 @@ flowchart LR
 
 ---
 
+### 2026-11-15: v8 build, text-in embeddings (tokenizer ensemble) + Triton's APIs
+- **Built or watched:**
+  - `infra/triton/Dockerfile` (digest-pinned base + `tokenizers`), `.dockerignore`, Compose `build:`.
+  - `tokenizer` model: `1/model.py` (Python backend: `initialize`, `execute` with per-request errors, decode errors → 400) and `config.pbtxt`.
+  - `embed` ensemble config; `v8_triton_check.py` extended (both paths, timing, error path).
+  - `bruno/triton/`: a Bruno collection of Triton's APIs (health, server, models, inference, statistics, metrics, admin), 19 requests with assertions and docs.
+  - **Both new `config.pbtxt` files were written by Claude at the owner's request** (learner-writes); the owner went through every field.
+- **Predicted vs actual:** the latency and "8 users" predictions weren't given. Measured: the ensemble costs the same as tokenizing on the client (within noise).
+- **Surprised me:**
+  - The tokenizer step costs ~1 ms in Triton though tokenizing takes 6 µs: Python backend IPC.
+  - e5 waits ~1.1 ms in its queue at low load: the batcher's delay waiting for requests that never come.
+  - JSON can't carry invalid UTF-8, so the error test needed the binary protocol.
+  - Backend errors default to 500 even when the client is at fault.
+- **I can now explain:** Dockerfile vs Compose, build context, `.dockerignore`, layer caching (`--build` still reuses it), digest pinning; why `--break-system-packages` and the alternatives (venv + PYTHONPATH, conda-pack `EXECUTION_ENV_PATH`); Python backend lifecycle (`initialize` once per instance, `execute` per call, one response per request in order) and `args`; `tokenizers` vs `AutoTokenizer`; where the pad token is declared and why padding/truncation are caller policies; `max_batch_size` (a batch dimension) vs `dynamic_batching` (merging requests); why only same-shape requests merge, and padding options (per request, across a call, buckets, fixed, ragged); ensemble wiring (`input_map`/`output_map`, internal tensors, data-dependency order); step models stay callable on their own; how tensors move between steps; model control modes (`none`/`poll`/`explicit`); Triton's health, metadata, config, repository, statistics, metrics, logging, trace and shared-memory APIs; 4xx vs 5xx for alerting and retries; other model servers (TorchServe, TF Serving, OpenVINO, MLServer, BentoML, Ray Serve, TEI, SGLang, KServe, NIM).
+- **Still don't get:** no quiz; why-questions open: why load the tokenizer in `initialize`; what silently breaks if client and server tokenizer versions differ.
+- **Tomorrow's first step:** perf_analyzer + batching tuning on `embed`/`e5` (queue delay 0 vs 500, threads, padding buckets under concurrency), reading `/v2/models/stats`. The ONNX and v9 re-asks are due.
+
+---
+
 ### 2026-11-14: v8 learn 2, Triton concepts + S0-1 (Triton on the Mac CPU)
 - **Built or watched:**
   - Triton Conceptual Guide part 1 (written guide; no clearly great video found).

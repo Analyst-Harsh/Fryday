@@ -1,0 +1,9 @@
+{
+  "version": "1",
+  "name": "Fryday Triton",
+  "type": "collection",
+  "ignore": [
+    "node_modules",
+    ".git"
+  ]
+}

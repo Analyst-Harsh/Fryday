@@ -1,0 +1,39 @@
+meta {
+  name: tokenizer: text → ids + mask
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/v2/models/tokenizer/infer
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "inputs": [
+      {
+        "name": "TEXT",
+        "shape": [
+          2,
+          1
+        ],
+        "datatype": "BYTES",
+        "data": [
+          "query: hi there",
+          "query: आज मौसम कैसा है?"
+        ]
+      }
+    ]
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+docs {
+  Step 1 of the ensemble on its own (useful for debugging). Note the padding: the first
+  sentence is shorter, so it ends with <pad> = 1 and mask = 0.
+}

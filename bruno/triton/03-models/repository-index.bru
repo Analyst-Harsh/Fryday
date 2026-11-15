@@ -1,0 +1,20 @@
+meta {
+  name: Repository index
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/v2/repository/index
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 200
+}
+
+docs {
+  Every model in the repository with its version and **state** (READY / UNAVAILABLE + reason).
+  The first place to look when a model doesn't load. POST with an empty body (`{}` also works).
+}

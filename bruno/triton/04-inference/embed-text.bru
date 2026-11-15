@@ -1,0 +1,46 @@
+meta {
+  name: embed: text → embedding (ensemble)
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/v2/models/embed/infer
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "inputs": [
+      {
+        "name": "TEXT",
+        "shape": [
+          2,
+          1
+        ],
+        "datatype": "BYTES",
+        "data": [
+          "query: hi there",
+          "query: आज मौसम कैसा है?"
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "sentence_embedding"
+      }
+    ]
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.outputs[0].name: eq sentence_embedding
+}
+
+docs {
+  The pipeline clients should use: text in, 384-number embedding out.
+  `shape: [2, 1]` = 2 sentences (the batch), 1 string each. Strings use datatype **BYTES**.
+  Only the ensemble's declared output comes back; the internal ids/mask stay inside.
+}
